@@ -1,0 +1,23 @@
+[package]
+name = "xen-vhost-master"
+version = "0.1.0"
+authors = ["Viresh Kumar <viresh.kumar@linaro.org>"]
+keywords = ["xen", "vhost-user", "virtio", "master"]
+description = "Xen vhost master"
+license = "Apache-2.0 OR BSD-3-Clause"
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+field-offset = "0.3.4"
+libc = ">=0.2.95"
+libxen-sys = { git = "https://github.com/vireshk/libxen-sys" }
+log = "0.4.14"
+seccompiler = "0.2.0"
+thiserror = "1.0"
+vhost = { version = "0.3", features = ["vhost-user-master", "vhost-kern", "vhost-user-slave"] }
+vhost-user-master = { git = "https://github.com/vireshk/vhost-user-master" }
+virtio-queue = "0.2"
+vm-memory = { version = "0.7.0", features = ["backend-mmap", "backend-atomic", "backend-bitmap"] }
+vmm-sys-util = "0.9"
