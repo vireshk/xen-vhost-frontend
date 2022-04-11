@@ -21,3 +21,4 @@ vhost-user-master = { git = "https://github.com/vireshk/vhost-user-master" }
 virtio-queue = "0.2"
 vm-memory = { version = "0.7.0", features = ["backend-mmap", "backend-atomic", "backend-bitmap"] }
 vmm-sys-util = "0.9"
+xen-ioctls = { git = "https://gitlab.com/mathieupoirier/oxerun/", branch = "xen-ioctls" }

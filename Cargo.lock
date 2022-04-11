@@ -280,6 +280,14 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "712e227841d057c1ee1cd2fb22fa7e5a5461ae8e48fa2ca79ec42cfc1931183f"
 
 [[package]]
+name = "xen-ioctls"
+version = "0.0.0-pre1"
+source = "git+https://gitlab.com/mathieupoirier/oxerun/?branch=xen-ioctls#703f1d8a911da08167c6531af49957ecdcafe5cd"
+dependencies = [
+ "libc",
+]
+
+[[package]]
 name = "xen-vhost-master"
 version = "0.1.0"
 dependencies = [
@@ -294,4 +302,5 @@ dependencies = [
  "virtio-queue",
  "vm-memory",
  "vmm-sys-util",
+ "xen-ioctls",
 ]

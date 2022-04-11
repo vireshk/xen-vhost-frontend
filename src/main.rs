@@ -4,7 +4,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 mod i2c;
-mod xc;
+mod ioctl;
 mod xs;
 mod xec;
 mod xfm;

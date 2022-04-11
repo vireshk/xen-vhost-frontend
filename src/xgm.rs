@@ -7,7 +7,7 @@ use std::mem;
 use std::os::raw::c_void;
 
 use libxen_sys::*;
-use super::{xc::XenCtrl, xfm::XenForeignMemory, Result};
+use super::{ioctl::get_dom_mem, xfm::XenForeignMemory, Result};
 
 pub const GUEST_RAM0_BASE: u64 = 0x40000000; // 3GB of low RAM @ 1GB
 pub const GUEST_RAM0_SIZE: u64 = 0xc0000000;
@@ -21,7 +21,7 @@ pub struct XenGuestMem {
 
 impl XenGuestMem {
     pub fn new(xfm: &mut XenForeignMemory, domid: domid_t) -> Result<Self> {
-        let size = XenCtrl::new()?.get_dom_mem(domid)?;
+        let size = get_dom_mem(domid)?;
         let mut mem: XenGuestMem = unsafe { mem::zeroed() };
 
         // #define-s below located at include/public/arch-arm.h
