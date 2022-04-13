@@ -3,14 +3,13 @@
 //
 // SPDX-License-Identifier: Apache-2.0
 
-use std::slice;
+use field_offset::offset_of;
 use std::os::raw::{c_int, c_void};
 use std::ptr;
+use std::slice;
 
-use field_offset::offset_of;
-
-use libxen_sys::*;
 use super::{Error, Result};
+use libxen_sys::*;
 
 pub struct XenForeignMemory {
     xfh: *mut xenforeignmemory_handle,
@@ -21,15 +20,13 @@ pub struct XenForeignMemory {
 
 impl XenForeignMemory {
     pub fn new() -> Result<Self> {
-        let xfh = unsafe {
-            xenforeignmemory_open(ptr::null_mut::<xentoollog_logger>(), 0)
-        };
+        let xfh = unsafe { xenforeignmemory_open(ptr::null_mut::<xentoollog_logger>(), 0) };
 
         if xfh.is_null() {
-            return Err(Error::XsError);
+            return Err(Error::XenForeignMemoryFailure);
         }
 
-        Ok (Self {
+        Ok(Self {
             xfh,
             res: None,
             ioreq: ptr::null_mut::<ioreq>(),
@@ -41,18 +38,23 @@ impl XenForeignMemory {
         let mut paddr = ptr::null_mut::<c_void>();
         let res = unsafe {
             xenforeignmemory_map_resource(
-                self.xfh, domid, XENMEM_resource_ioreq_server, id as u32,
-                1, 1,
+                self.xfh,
+                domid,
+                XENMEM_resource_ioreq_server,
+                id as u32,
+                1,
+                1,
                 ptr::addr_of_mut!(paddr),
-                libc::PROT_READ | libc::PROT_WRITE, 0,
+                libc::PROT_READ | libc::PROT_WRITE,
+                0,
             )
         };
 
         if res.is_null() {
-            Err(Error::XsError)
+            Err(Error::XenForeignMemoryFailure)
         } else {
-            let offset  = offset_of!(shared_iopage => vcpu_ioreq).get_byte_offset();
-            self.ioreq = unsafe { paddr.offset(offset as isize) } as *mut ioreq;
+            let offset = offset_of!(shared_iopage => vcpu_ioreq).get_byte_offset();
+            self.ioreq = unsafe { paddr.add(offset) } as *mut ioreq;
             self.res = Some(res);
             Ok(())
         }
@@ -65,7 +67,7 @@ impl XenForeignMemory {
 
         let ret = unsafe { xenforeignmemory_unmap_resource(self.xfh, self.res.unwrap()) };
         if ret < 0 {
-            Err(Error::XsError)
+            Err(Error::XenForeignMemoryFailure)
         } else {
             self.res = None;
             Ok(())
@@ -90,16 +92,24 @@ impl XenForeignMemory {
         }
 
         let mut pfn: Vec<xen_pfn_t> = vec![0; num as usize];
-        for i in 0..num as usize {
-            pfn[i] = base + i as u64;
+        for (i, pfn) in pfn.iter_mut().enumerate().take(num as usize) {
+            *pfn = base + i as u64;
         }
 
-        let addr = unsafe { xenforeignmemory_map(self.xfh, domid as u32, libc::PROT_READ | libc::PROT_WRITE, num, pfn.as_ptr(), ptr::null_mut::<c_int>()) };
+        let addr = unsafe {
+            xenforeignmemory_map(
+                self.xfh,
+                domid as u32,
+                libc::PROT_READ | libc::PROT_WRITE,
+                num,
+                pfn.as_ptr(),
+                ptr::null_mut::<c_int>(),
+            )
+        };
         if addr.is_null() {
-            Err(Error::XsError)
+            Err(Error::XenForeignMemoryFailure)
         } else {
             self.addr.push((addr, num));
-
             Ok(addr)
         }
     }
@@ -120,6 +130,9 @@ impl Drop for XenForeignMemory {
     fn drop(&mut self) {
         self.unmap_mem().unwrap();
         self.unmap_resource().unwrap();
-        unsafe{ xenforeignmemory_close(self.xfh); }
+
+        unsafe {
+            xenforeignmemory_close(self.xfh);
+        }
     }
 }

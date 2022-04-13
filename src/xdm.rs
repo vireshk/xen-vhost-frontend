@@ -3,8 +3,8 @@
 //
 // SPDX-License-Identifier: Apache-2.0
 
-use libxen_sys::*;
 use super::{Error, Result};
+use libxen_sys::*;
 
 pub const VIRTIO_IRQ_HIGH: u32 = 1;
 
@@ -18,12 +18,10 @@ pub struct XenDeviceModel {
 
 impl XenDeviceModel {
     pub fn new(domid: domid_t) -> Result<Self> {
-        let xdh = unsafe {
-            xendevicemodel_open(std::ptr::null_mut::<xentoollog_logger>(), 0)
-        };
+        let xdh = unsafe { xendevicemodel_open(std::ptr::null_mut::<xentoollog_logger>(), 0) };
 
         if xdh.is_null() {
-            return Err(Error::XsError);
+            return Err(Error::XenDeviceModelFailure);
         }
 
         // Create the domain struct earlier so Drop can be called in case of errors.
@@ -38,11 +36,11 @@ impl XenDeviceModel {
         let mut num = 0;
         let ret = unsafe { xendevicemodel_nr_vcpus(xdm.xdh, domid, &mut num) };
         if ret < 0 {
-            return Err(Error::XsError);
+            return Err(Error::XenDeviceModelFailure);
         }
 
         xdm.vcpus = num;
-        Ok (xdm)
+        Ok(xdm)
     }
 
     pub fn ioserver_id(&self) -> ioservid_t {
@@ -56,9 +54,16 @@ impl XenDeviceModel {
     pub fn create_ioreq_server(&mut self) -> Result<()> {
         let mut id = 0;
 
-        let ret = unsafe { xendevicemodel_create_ioreq_server(self.xdh, self.domid, HVM_IOREQSRV_BUFIOREQ_OFF as i32, &mut id) };
+        let ret = unsafe {
+            xendevicemodel_create_ioreq_server(
+                self.xdh,
+                self.domid,
+                HVM_IOREQSRV_BUFIOREQ_OFF as i32,
+                &mut id,
+            )
+        };
         if ret < 0 {
-            Err(Error::XsError)
+            Err(Error::XenDeviceModelFailure)
         } else {
             self.id = Some(id);
             Ok(())
@@ -70,9 +75,11 @@ impl XenDeviceModel {
             return Ok(());
         }
 
-        let ret = unsafe { xendevicemodel_destroy_ioreq_server(self.xdh, self.domid, self.ioserver_id()) };
+        let ret = unsafe {
+            xendevicemodel_destroy_ioreq_server(self.xdh, self.domid, self.ioserver_id())
+        };
         if ret < 0 {
-            Err(Error::XsError)
+            Err(Error::XenDeviceModelFailure)
         } else {
             self.id = None;
             Ok(())
@@ -80,9 +87,11 @@ impl XenDeviceModel {
     }
 
     pub fn set_ioreq_server_state(&self, enabled: i32) -> Result<()> {
-        let ret = unsafe { xendevicemodel_set_ioreq_server_state(self.xdh, self.domid, self.ioserver_id(), enabled) };
+        let ret = unsafe {
+            xendevicemodel_set_ioreq_server_state(self.xdh, self.domid, self.ioserver_id(), enabled)
+        };
         if ret < 0 {
-            Err(Error::XsError)
+            Err(Error::XenDeviceModelFailure)
         } else {
             Ok(())
         }
@@ -90,9 +99,18 @@ impl XenDeviceModel {
 
     pub fn map_io_range_to_ioreq_server(&mut self, start: u64, size: u64) -> Result<()> {
         let end = start + size - 1;
-        let ret = unsafe { xendevicemodel_map_io_range_to_ioreq_server(self.xdh, self.domid, self.ioserver_id(), 1, start, end) };
+        let ret = unsafe {
+            xendevicemodel_map_io_range_to_ioreq_server(
+                self.xdh,
+                self.domid,
+                self.ioserver_id(),
+                1,
+                start,
+                end,
+            )
+        };
         if ret < 0 {
-            Err(Error::XsError)
+            Err(Error::XenDeviceModelFailure)
         } else {
             self.map_range = Some((start, end));
             Ok(())
@@ -101,9 +119,18 @@ impl XenDeviceModel {
 
     fn ummap_io_range_from_ioreq_server(&self) -> Result<()> {
         if let Some((start, end)) = self.map_range {
-            let ret = unsafe { xendevicemodel_unmap_io_range_from_ioreq_server(self.xdh, self.domid, self.ioserver_id(), 1, start, end) };
+            let ret = unsafe {
+                xendevicemodel_unmap_io_range_from_ioreq_server(
+                    self.xdh,
+                    self.domid,
+                    self.ioserver_id(),
+                    1,
+                    start,
+                    end,
+                )
+            };
             if ret < 0 {
-                return Err(Error::XsError);
+                return Err(Error::XenDeviceModelFailure);
             }
         }
 
@@ -111,9 +138,10 @@ impl XenDeviceModel {
     }
 
     pub fn set_irq(&self, irq: u32) -> Result<()> {
-        let ret = unsafe { xendevicemodel_set_irq_level(self.xdh, self.domid, irq, VIRTIO_IRQ_HIGH) };
+        let ret =
+            unsafe { xendevicemodel_set_irq_level(self.xdh, self.domid, irq, VIRTIO_IRQ_HIGH) };
         if ret < 0 {
-            Err(Error::XsError)
+            Err(Error::XenDeviceModelFailure)
         } else {
             Ok(())
         }
@@ -125,6 +153,9 @@ impl Drop for XenDeviceModel {
         self.ummap_io_range_from_ioreq_server().unwrap();
         self.set_ioreq_server_state(0).unwrap();
         self.destroy_ioreq_server().unwrap();
-        unsafe{ xendevicemodel_close(self.xdh); }
+
+        unsafe {
+            xendevicemodel_close(self.xdh);
+        }
     }
 }
