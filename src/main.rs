@@ -108,6 +108,7 @@ fn create_device() -> Result<Generic> {
     let device_type = VirtioDeviceType::from(args.name.as_str()) as u32;
 
     let vu_cfg = VhostUserConfig {
+        name: args.name,
         socket: args.socket_path,
         num_queues: NUM_QUEUES,
         queue_size: MAX_QUEUE_SIZE,
@@ -138,7 +139,7 @@ unsafe impl Sync for XenState {}
 
 impl XenState {
     pub fn new(dev: &Generic) -> Result<Self> {
-        let mut xsd = XsDev::new("i2c")?;
+        let mut xsd = XsDev::new(dev.name())?;
         xsd.get_be_domid()?;
         xsd.wait_for_fe_domid()?;
         xsd.connect_dom()?;
