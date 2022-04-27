@@ -10,9 +10,9 @@ use std::slice;
 
 use super::{Error, Result};
 use libxen_sys::*;
-use xen_ioctls::xfm::xfm::xenforeignmemory_map_resource as xenforeignmemory_map_resource_ng;
-use xen_ioctls::xfm::xfm::xenforeignmemory_unmap_resource as xenforeignmemory_unmap_resource_ng;
-use xen_ioctls::xfm::xfm_types::XenForeignMemoryResourceHandle;
+use xen_ioctls::xenforeignmemory_map_resource as xenforeignmemory_map_resource_ng;
+use xen_ioctls::xenforeignmemory_unmap_resource as xenforeignmemory_unmap_resource_ng;
+use xen_ioctls::XenForeignMemoryResourceHandle;
 
 pub struct XenForeignMemory {
     xfh: *mut xenforeignmemory_handle,

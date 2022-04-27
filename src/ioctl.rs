@@ -4,7 +4,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use libxen_sys::{domid_t, XC_PAGE_SHIFT};
-use xen_ioctls::domctl::domctl::xc_domain_info;
+use xen_ioctls::xc_domain_info;
 
 use super::{Error, Result};
 
