@@ -6,7 +6,7 @@
 use std::mem;
 use std::os::raw::c_void;
 
-use vhost_user_master::{Generic, GuestMemoryMmap};
+use vhost_user_master::{Generic, GuestMemoryMmap, VirtioDevice};
 use virtio_queue::{Queue, QueueState};
 use vm_memory::GuestMemoryAtomic;
 use vmm_sys_util::eventfd::{EventFd, EFD_NONBLOCK};
@@ -14,7 +14,6 @@ use vmm_sys_util::eventfd::{EventFd, EFD_NONBLOCK};
 use super::{xdm::XenDeviceModel, xgm::XenGuestMem, Error, Result};
 use libxen_sys::*;
 
-pub const VIRTIO_QUEUE_SIZE: u32 = 1024;
 pub const VIRTIO_MMIO_IO_SIZE: u64 = 0x200;
 
 struct VirtQueue {
@@ -32,7 +31,6 @@ pub struct XenMmio {
     addr: u64,
     magic: [u8; 4],
     version: u8,
-    device_type: u32,
     vendor_id: u32,
     status: u32,
     queue_sel: u32,
@@ -48,14 +46,13 @@ pub struct XenMmio {
 }
 
 impl XenMmio {
-    pub fn new(xdm: &mut XenDeviceModel, device_type: u32, addr: u64) -> Result<Self> {
+    pub fn new(xdm: &mut XenDeviceModel, addr: u64) -> Result<Self> {
         xdm.map_io_range_to_ioreq_server(addr, VIRTIO_MMIO_IO_SIZE)?;
 
         Ok(Self {
             addr,
             magic: [b'v', b'i', b'r', b't'],
             version: 1,
-            device_type,
             vendor_id: 0x4d564b4c,
             status: 0,
             queue_sel: 0,
@@ -117,7 +114,7 @@ impl XenMmio {
         ioreq.data = match offset as u32 {
             VIRTIO_MMIO_MAGIC_VALUE => u32::from_le_bytes(self.magic),
             VIRTIO_MMIO_VERSION => self.version as u32,
-            VIRTIO_MMIO_DEVICE_ID => self.device_type,
+            VIRTIO_MMIO_DEVICE_ID => dev.device_type() as u32,
             VIRTIO_MMIO_VENDOR_ID => self.vendor_id,
             VIRTIO_MMIO_STATUS => self.status,
             VIRTIO_MMIO_INTERRUPT_STATUS => self.interrupt_state,
@@ -153,11 +150,11 @@ impl XenMmio {
                     dev.negotiate_features(self.driver_features)
                         .map_err(Error::VhostMasterError)?;
 
-                    for _i in 0..dev.num_queues() {
+                    for size in dev.queue_max_sizes() {
                         self.vq.push(VirtQueue {
                             pfn: 0,
                             size: 0,
-                            size_max: VIRTIO_QUEUE_SIZE,
+                            size_max: *size as u32,
                             align: 0,
                             kick: EventFd::new(EFD_NONBLOCK).unwrap(),
                             queue: None,

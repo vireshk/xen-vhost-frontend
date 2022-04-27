@@ -88,9 +88,6 @@ pub enum Error {
     EventFdWriteFailed(io::Error),
 }
 
-const MAX_QUEUE_SIZE: u16 = 1024;
-const NUM_QUEUES: usize = 1;
-
 #[derive(Parser, Debug)]
 #[clap(author, version, about, long_about = None)]
 struct DeviceArgs {
@@ -105,20 +102,17 @@ struct DeviceArgs {
 
 fn create_device() -> Result<Generic> {
     let args = DeviceArgs::parse();
-    let device_type = VirtioDeviceType::from(args.name.as_str()) as u32;
+    let device_type = VirtioDeviceType::from(args.name.as_str());
 
     let vu_cfg = VhostUserConfig {
-        name: args.name,
+        device_type,
         socket: args.socket_path,
-        num_queues: NUM_QUEUES,
-        queue_size: MAX_QUEUE_SIZE,
     };
 
     let generic = Generic::new(
         vu_cfg,
         SeccompAction::Allow,
         EventFd::new(EFD_NONBLOCK).unwrap(),
-        device_type,
     )
     .map_err(Error::VhostMasterError)?;
 
@@ -161,7 +155,7 @@ impl XenState {
         xec.bind(&xfm, xsd.fe_domid(), xdm.vcpus())?;
 
         let xgm = XenGuestMem::new(&mut xfm, xsd.fe_domid())?;
-        let mmio = XenMmio::new(&mut xdm, dev.device_type(), xsd.addr() as u64)?;
+        let mmio = XenMmio::new(&mut xdm, xsd.addr() as u64)?;
 
         Ok(Self {
             xsd,

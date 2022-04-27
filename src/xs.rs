@@ -186,7 +186,7 @@ pub struct XsDev {
 }
 
 impl XsDev {
-    pub fn new(dev_name: &str) -> Result<Self> {
+    pub fn new(dev_name: String) -> Result<Self> {
         let xsh = unsafe { xs_open(0) };
         if xsh.is_null() {
             return Err(Error::XsOpenFailed);
@@ -197,7 +197,7 @@ impl XsDev {
             be_domid: 0,
             fe_domid: 0,
             dev_id: 0,
-            dev_name: dev_name.to_string(),
+            dev_name: dev_name.clone(),
             be: "".to_string(),
             fe: "".to_string(),
             be_state: 0,
