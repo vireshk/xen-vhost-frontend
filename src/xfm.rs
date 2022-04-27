@@ -10,10 +10,13 @@ use std::slice;
 
 use super::{Error, Result};
 use libxen_sys::*;
+use xen_ioctls::xfm::xfm::xenforeignmemory_map_resource as xenforeignmemory_map_resource_ng;
+use xen_ioctls::xfm::xfm::xenforeignmemory_unmap_resource as xenforeignmemory_unmap_resource_ng;
+use xen_ioctls::xfm::xfm_types::XenForeignMemoryResourceHandle;
 
 pub struct XenForeignMemory {
     xfh: *mut xenforeignmemory_handle,
-    res: Option<*mut xenforeignmemory_resource_handle>,
+    res: Option<XenForeignMemoryResourceHandle>,
     ioreq: *mut ioreq,
     addr: Vec<(*mut c_void, u64)>,
 }
@@ -35,42 +38,37 @@ impl XenForeignMemory {
     }
 
     pub fn map_resource(&mut self, domid: domid_t, id: ioservid_t) -> Result<()> {
-        let mut paddr = ptr::null_mut::<c_void>();
-        let res = unsafe {
-            xenforeignmemory_map_resource(
-                self.xfh,
-                domid,
-                XENMEM_resource_ioreq_server,
-                id as u32,
-                1,
-                1,
-                ptr::addr_of_mut!(paddr),
-                libc::PROT_READ | libc::PROT_WRITE,
-                0,
-            )
-        };
-
-        if res.is_null() {
-            Err(Error::XenForeignMemoryFailure)
-        } else {
-            let offset = offset_of!(shared_iopage => vcpu_ioreq).get_byte_offset();
-            self.ioreq = unsafe { paddr.add(offset) } as *mut ioreq;
-            self.res = Some(res);
-            Ok(())
-        }
+        let paddr = ptr::null_mut::<c_void>();
+        xenforeignmemory_map_resource_ng(
+            domid,
+            XENMEM_resource_ioreq_server,
+            id as u32,
+            1,
+            1,
+            paddr,
+            libc::PROT_READ | libc::PROT_WRITE,
+            0,
+            ).map_or(
+                Err(Error::XenForeignMemoryFailure),
+                |resource_handle| {
+                    let offset = offset_of!(shared_iopage => vcpu_ioreq).get_byte_offset();
+                    self.ioreq = unsafe { resource_handle.addr.add(offset) } as *mut ioreq;
+                    self.res = Some(resource_handle);
+                    Ok(())
+            })
     }
 
     fn unmap_resource(&mut self) -> Result<()> {
-        if self.res.is_none() {
-            return Ok(());
-        }
-
-        let ret = unsafe { xenforeignmemory_unmap_resource(self.xfh, self.res.unwrap()) };
-        if ret < 0 {
-            Err(Error::XenForeignMemoryFailure)
-        } else {
-            self.res = None;
-            Ok(())
+        match &self.res {
+            Some(res) => {
+                xenforeignmemory_unmap_resource_ng(&res).map_or(
+                    Err(Error::XenForeignMemoryFailure),
+                    |_| {
+                        self.res = None;
+                        Ok(())
+                    })
+            }
+            None => Ok(())
         }
     }
 
