@@ -9,10 +9,14 @@ use std::ptr;
 use std::slice;
 
 use super::{Error, Result};
-use libxen_sys::*;
-use xen_ioctls::xenforeignmemory_map_resource as xenforeignmemory_map_resource_ng;
-use xen_ioctls::xenforeignmemory_unmap_resource as xenforeignmemory_unmap_resource_ng;
-use xen_ioctls::XenForeignMemoryResourceHandle;
+use libxen_sys::{
+    domid_t, ioreq, ioservid_t, shared_iopage, xen_pfn_t, xenforeignmemory_close,
+    xenforeignmemory_handle, xenforeignmemory_map, xenforeignmemory_open, xenforeignmemory_unmap,
+    xentoollog_logger, XENMEM_resource_ioreq_server, XC_PAGE_SHIFT,
+};
+use xen_ioctls::{
+    xenforeignmemory_map_resource, xenforeignmemory_unmap_resource, XenForeignMemoryResourceHandle,
+};
 
 pub struct XenForeignMemory {
     xfh: *mut xenforeignmemory_handle,
@@ -39,7 +43,7 @@ impl XenForeignMemory {
 
     pub fn map_resource(&mut self, domid: domid_t, id: ioservid_t) -> Result<()> {
         let paddr = ptr::null_mut::<c_void>();
-        xenforeignmemory_map_resource_ng(
+        xenforeignmemory_map_resource(
             domid,
             XENMEM_resource_ioreq_server,
             id as u32,
@@ -48,27 +52,25 @@ impl XenForeignMemory {
             paddr,
             libc::PROT_READ | libc::PROT_WRITE,
             0,
-            ).map_or(
-                Err(Error::XenForeignMemoryFailure),
-                |resource_handle| {
-                    let offset = offset_of!(shared_iopage => vcpu_ioreq).get_byte_offset();
-                    self.ioreq = unsafe { resource_handle.addr.add(offset) } as *mut ioreq;
-                    self.res = Some(resource_handle);
-                    Ok(())
-            })
+        )
+        .map_or(Err(Error::XenForeignMemoryFailure), |resource_handle| {
+            let offset = offset_of!(shared_iopage => vcpu_ioreq).get_byte_offset();
+            self.ioreq = unsafe { resource_handle.addr.add(offset) } as *mut ioreq;
+            self.res = Some(resource_handle);
+            Ok(())
+        })
     }
 
     fn unmap_resource(&mut self) -> Result<()> {
         match &self.res {
-            Some(res) => {
-                xenforeignmemory_unmap_resource_ng(&res).map_or(
-                    Err(Error::XenForeignMemoryFailure),
-                    |_| {
-                        self.res = None;
-                        Ok(())
-                    })
-            }
-            None => Ok(())
+            Some(res) => xenforeignmemory_unmap_resource(res).map_or(
+                Err(Error::XenForeignMemoryFailure),
+                |_| {
+                    self.res = None;
+                    Ok(())
+                },
+            ),
+            None => Ok(()),
         }
     }
 
