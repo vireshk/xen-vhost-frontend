@@ -12,12 +12,23 @@ use vm_memory::guest_memory::FileOffset;
 use vm_memory::mmap::NewBitmap;
 use vm_memory::{GuestAddress, GuestMemoryAtomic};
 
-use super::{ioctl::get_dom_mem, xfm::XenForeignMemory, Result};
+use super::{xfm::XenForeignMemory, Error, Result};
 use libxen_sys::*;
+use xen_ioctls::xc_domain_info;
 
 pub const GUEST_RAM0_BASE: u64 = 0x40000000; // 3GB of low RAM @ 1GB
 pub const GUEST_RAM0_SIZE: u64 = 0xc0000000;
 pub const GUEST_RAM1_BASE: u64 = 0x0200000000;
+
+fn get_dom_mem(domid: domid_t) -> Result<u64> {
+    let info = xc_domain_info(domid, 1);
+
+    if info.len() != 1 || info[0].domid != domid {
+        Err(Error::InvalidDomainInfo(info.len(), domid, info[0].domid))
+    } else {
+        Ok((info[0].nr_pages - 4) << XC_PAGE_SHIFT)
+    }
+}
 
 pub struct XenGuestMem {
     base: [u64; GUEST_RAM_BANKS as usize],
