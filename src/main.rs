@@ -17,7 +17,7 @@ use std::{
     io,
     num::ParseIntError,
     str,
-    sync::{Arc, RwLock},
+    sync::{atomic::fence, atomic::Ordering, Arc, RwLock},
     thread::{spawn, JoinHandle},
 };
 use thiserror::Error as ThisError;
@@ -30,7 +30,7 @@ use vmm_sys_util::eventfd::{EventFd, EFD_NONBLOCK};
 
 use interrupt::{handle_interrupt, XenVirtioInterrupt};
 use libxen_sys::{
-    domid_t, xen_mb, xenbus_state_XenbusStateInitialising, xenbus_state_XenbusStateUnknown,
+    domid_t, xenbus_state_XenbusStateInitialising, xenbus_state_XenbusStateUnknown,
     xs_watch_type_XS_WATCH_TOKEN, STATE_IOREQ_INPROCESS, STATE_IOREQ_READY, STATE_IORESP_READY,
 };
 use mmio::XenMmio;
@@ -200,16 +200,22 @@ impl XenState {
             return Ok(());
         }
 
-        unsafe { xen_mb() };
+        // Memory barrier
+        fence(Ordering::SeqCst);
+
         ioreq.set_state(STATE_IOREQ_INPROCESS as u8);
 
         self.mmio
             .handle_ioreq(ioreq, &mut dev.write().unwrap(), &self.xgm)?;
-        unsafe { xen_mb() };
+
+        // Memory barrier
+        fence(Ordering::SeqCst);
 
         ioreq.set_state(STATE_IORESP_READY as u8);
 
-        unsafe { xen_mb() };
+        // Memory barrier
+        fence(Ordering::SeqCst);
+
         self.xec.notify(port)?;
 
         Ok(())
