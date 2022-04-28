@@ -111,14 +111,14 @@ fn create_device() -> Result<Generic> {
         socket: args.socket_path,
     };
 
-    let generic = Generic::new(
+    let dev = Generic::new(
         vu_cfg,
         SeccompAction::Allow,
         EventFd::new(EFD_NONBLOCK).unwrap(),
     )
     .map_err(Error::VhostMasterError)?;
 
-    Ok(generic)
+    Ok(dev)
 }
 
 pub struct XenState {
