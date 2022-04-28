@@ -12,7 +12,12 @@ use std::{slice, str, thread, time};
 use vmm_sys_util::epoll::{ControlOperation, Epoll, EpollEvent, EventSet};
 
 use super::{Error, Result};
-use libxen_sys::*;
+use libxen_sys::{
+    domid_t, strlen, xenbus_state_XenbusStateInitWait, xenbus_state_XenbusStateInitialising,
+    xenbus_state_XenbusStateUnknown, xs_close, xs_directory, xs_fileno, xs_handle, xs_open,
+    xs_read, xs_read_watch, xs_transaction_t, xs_unwatch, xs_watch, xs_watch_type,
+    xs_watch_type_XS_WATCH_PATH, xs_write, XenbusState, XBT_NULL,
+};
 
 struct XsWatch {
     xsh: *mut xs_handle,

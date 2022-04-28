@@ -13,7 +13,7 @@ use vm_memory::mmap::NewBitmap;
 use vm_memory::{GuestAddress, GuestMemoryAtomic};
 
 use super::{xfm::XenForeignMemory, Error, Result};
-use libxen_sys::*;
+use libxen_sys::{domid_t, GUEST_RAM_BANKS, XC_PAGE_SHIFT};
 use xen_ioctls::xc_domain_info;
 
 pub const GUEST_RAM0_BASE: u64 = 0x40000000; // 3GB of low RAM @ 1GB

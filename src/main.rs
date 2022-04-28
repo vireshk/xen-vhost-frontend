@@ -29,7 +29,10 @@ use vmm_sys_util::epoll::{ControlOperation, Epoll, EpollEvent, EventSet};
 use vmm_sys_util::eventfd::{EventFd, EFD_NONBLOCK};
 
 use interrupt::{handle_interrupt, XenVirtioInterrupt};
-use libxen_sys::*;
+use libxen_sys::{
+    domid_t, xen_mb, xenbus_state_XenbusStateInitialising, xenbus_state_XenbusStateUnknown,
+    xs_watch_type_XS_WATCH_TOKEN, STATE_IOREQ_INPROCESS, STATE_IOREQ_READY, STATE_IORESP_READY,
+};
 use mmio::XenMmio;
 use xdm::XenDeviceModel;
 use xec::XenEvtChnHandle;

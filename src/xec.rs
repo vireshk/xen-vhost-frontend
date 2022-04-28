@@ -6,7 +6,11 @@
 use std::ptr;
 
 use super::{xfm::XenForeignMemory, Error, Result};
-use libxen_sys::*;
+use libxen_sys::{
+    domid_t, evtchn_port_t, xenevtchn_bind_interdomain, xenevtchn_close, xenevtchn_fd,
+    xenevtchn_handle, xenevtchn_notify, xenevtchn_open, xenevtchn_pending, xenevtchn_unbind,
+    xenevtchn_unmask, xentoollog_logger,
+};
 
 pub struct XenEvtChnHandle {
     xeh: *mut xenevtchn_handle,

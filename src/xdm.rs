@@ -4,7 +4,13 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::{Error, Result};
-use libxen_sys::*;
+use libxen_sys::{
+    domid_t, ioservid_t, xendevicemodel_close, xendevicemodel_create_ioreq_server,
+    xendevicemodel_destroy_ioreq_server, xendevicemodel_handle,
+    xendevicemodel_map_io_range_to_ioreq_server, xendevicemodel_nr_vcpus, xendevicemodel_open,
+    xendevicemodel_set_ioreq_server_state, xendevicemodel_set_irq_level,
+    xendevicemodel_unmap_io_range_from_ioreq_server, xentoollog_logger, HVM_IOREQSRV_BUFIOREQ_OFF,
+};
 
 pub const VIRTIO_IRQ_HIGH: u32 = 1;
 
