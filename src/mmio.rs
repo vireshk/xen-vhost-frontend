@@ -6,15 +6,16 @@
 use std::mem;
 use std::os::raw::c_void;
 
+use vhost::vhost_user::message::VHOST_USER_CONFIG_OFFSET;
 use vhost_user_master::{Generic, GuestMemoryMmap, VirtioDevice};
 use virtio_queue::{Queue, QueueState};
-use vm_memory::GuestMemoryAtomic;
+use vm_memory::{ByteValued, GuestMemoryAtomic};
 use vmm_sys_util::eventfd::{EventFd, EFD_NONBLOCK};
 
 use super::{xdm::XenDeviceModel, xgm::XenGuestMem, Error, Result};
 use libxen_sys::{
     ioreq, vring, vring_avail_t, vring_desc_t, vring_used_t, IOREQ_READ, IOREQ_TYPE_COPY,
-    IOREQ_TYPE_INVALIDATE, IOREQ_WRITE, VIRTIO_MMIO_CONFIG, VIRTIO_MMIO_DEVICE_FEATURES,
+    IOREQ_TYPE_INVALIDATE, IOREQ_WRITE, VIRTIO_MMIO_DEVICE_FEATURES,
     VIRTIO_MMIO_DEVICE_FEATURES_SEL, VIRTIO_MMIO_DEVICE_ID, VIRTIO_MMIO_DRIVER_FEATURES,
     VIRTIO_MMIO_DRIVER_FEATURES_SEL, VIRTIO_MMIO_GUEST_PAGE_SIZE, VIRTIO_MMIO_INTERRUPT_ACK,
     VIRTIO_MMIO_INTERRUPT_STATUS, VIRTIO_MMIO_MAGIC_VALUE, VIRTIO_MMIO_QUEUE_ALIGN,
@@ -111,11 +112,16 @@ impl XenMmio {
         self.interrupt_state |= mask;
     }
 
-    fn handle_config_read(&self, _ioreq: &ioreq, _offset: u64) -> Result<()> {
+    fn handle_config_read(&self, ioreq: &mut ioreq, dev: &Generic, offset: u64) -> Result<()> {
+        let mut data: u64 = 0;
+        dev.read_config(offset, &mut data.as_mut_slice()[0..ioreq.size as usize]);
+        ioreq.data = data;
+
         Ok(())
     }
 
-    fn handle_config_write(&self, _ioreq: &ioreq, _offset: u64) -> Result<()> {
+    fn handle_config_write(&self, ioreq: &mut ioreq, dev: &mut Generic, offset: u64) -> Result<()> {
+        dev.write_config(offset, &ioreq.data.to_ne_bytes()[0..ioreq.size as usize]);
         Ok(())
     }
 
@@ -253,20 +259,20 @@ impl XenMmio {
             IOREQ_TYPE_COPY => {
                 let mut offset = ioreq.addr - self.addr;
 
-                if offset >= VIRTIO_MMIO_CONFIG as u64 {
-                    offset -= VIRTIO_MMIO_CONFIG as u64;
+                if offset >= VHOST_USER_CONFIG_OFFSET as u64 {
+                    offset -= VHOST_USER_CONFIG_OFFSET as u64;
 
                     match ioreq.dir() as u32 {
-                        IOREQ_READ => self.handle_config_read(ioreq, offset)?,
-                        IOREQ_WRITE => self.handle_config_write(ioreq, offset)?,
+                        IOREQ_READ => self.handle_config_read(ioreq, dev, offset)?,
+                        IOREQ_WRITE => self.handle_config_write(ioreq, dev, offset)?,
                         _ => return Err(Error::InvalidMmioDir(ioreq.dir())),
                     }
-                }
-
-                match ioreq.dir() as u32 {
-                    IOREQ_READ => self.handle_io_read(ioreq, dev, offset)?,
-                    IOREQ_WRITE => self.handle_io_write(ioreq, dev, gm, offset)?,
-                    _ => return Err(Error::InvalidMmioDir(ioreq.dir())),
+                } else {
+                    match ioreq.dir() as u32 {
+                        IOREQ_READ => self.handle_io_read(ioreq, dev, offset)?,
+                        IOREQ_WRITE => self.handle_io_write(ioreq, dev, gm, offset)?,
+                        _ => return Err(Error::InvalidMmioDir(ioreq.dir())),
+                    }
                 }
             }
 
