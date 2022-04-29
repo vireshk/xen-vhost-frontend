@@ -50,6 +50,10 @@ pub enum Error {
     InvalidDomainInfo(usize, domid_t, domid_t),
     #[error("Invalid MMIO {0:} Address {1:?}")]
     InvalidMmioAddr(&'static str, u64),
+    #[error("MMIO Legacy not supported by Guest")]
+    MmioLegacyNotSupported,
+    #[error("Invalid feature select {0:}")]
+    InvalidFeatureSel(u32),
     #[error("Invalid MMIO direction {0:}")]
     InvalidMmioDir(u8),
     #[error("Xen device model failure")]
@@ -157,7 +161,7 @@ impl XenState {
         xec.bind(&xfm, xsd.fe_domid(), xdm.vcpus())?;
 
         let xgm = XenGuestMem::new(&mut xfm, xsd.fe_domid())?;
-        let mmio = XenMmio::new(&mut xdm, xsd.addr() as u64)?;
+        let mmio = XenMmio::new(&mut xdm, dev, xsd.addr() as u64)?;
 
         Ok(Self {
             xsd,

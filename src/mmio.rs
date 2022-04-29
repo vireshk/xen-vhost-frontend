@@ -3,9 +3,6 @@
 //
 // SPDX-License-Identifier: Apache-2.0
 
-use std::mem;
-use std::os::raw::c_void;
-
 use vhost::vhost_user::message::VHOST_USER_CONFIG_OFFSET;
 use vhost_user_master::{Generic, GuestMemoryMmap, VirtioDevice};
 use virtio_queue::{Queue, QueueState};
@@ -14,23 +11,29 @@ use vmm_sys_util::eventfd::{EventFd, EFD_NONBLOCK};
 
 use super::{xdm::XenDeviceModel, xgm::XenGuestMem, Error, Result};
 use libxen_sys::{
-    ioreq, vring, vring_avail_t, vring_desc_t, vring_used_t, IOREQ_READ, IOREQ_TYPE_COPY,
-    IOREQ_TYPE_INVALIDATE, IOREQ_WRITE, VIRTIO_MMIO_DEVICE_FEATURES,
-    VIRTIO_MMIO_DEVICE_FEATURES_SEL, VIRTIO_MMIO_DEVICE_ID, VIRTIO_MMIO_DRIVER_FEATURES,
-    VIRTIO_MMIO_DRIVER_FEATURES_SEL, VIRTIO_MMIO_GUEST_PAGE_SIZE, VIRTIO_MMIO_INTERRUPT_ACK,
-    VIRTIO_MMIO_INTERRUPT_STATUS, VIRTIO_MMIO_MAGIC_VALUE, VIRTIO_MMIO_QUEUE_ALIGN,
-    VIRTIO_MMIO_QUEUE_NOTIFY, VIRTIO_MMIO_QUEUE_NUM, VIRTIO_MMIO_QUEUE_NUM_MAX,
-    VIRTIO_MMIO_QUEUE_PFN, VIRTIO_MMIO_QUEUE_SEL, VIRTIO_MMIO_STATUS, VIRTIO_MMIO_VENDOR_ID,
-    VIRTIO_MMIO_VERSION, XC_PAGE_SIZE,
+    ioreq, IOREQ_READ, IOREQ_TYPE_COPY, IOREQ_TYPE_INVALIDATE, IOREQ_WRITE, VIRTIO_F_VERSION_1,
+    VIRTIO_MMIO_CONFIG_GENERATION, VIRTIO_MMIO_DEVICE_FEATURES, VIRTIO_MMIO_DEVICE_FEATURES_SEL,
+    VIRTIO_MMIO_DEVICE_ID, VIRTIO_MMIO_DRIVER_FEATURES, VIRTIO_MMIO_DRIVER_FEATURES_SEL,
+    VIRTIO_MMIO_INTERRUPT_ACK, VIRTIO_MMIO_INTERRUPT_STATUS, VIRTIO_MMIO_MAGIC_VALUE,
+    VIRTIO_MMIO_QUEUE_AVAIL_LOW, VIRTIO_MMIO_QUEUE_AVAIL_HIGH, VIRTIO_MMIO_QUEUE_DESC_LOW,
+    VIRTIO_MMIO_QUEUE_DESC_HIGH, VIRTIO_MMIO_QUEUE_NOTIFY, VIRTIO_MMIO_QUEUE_NUM,
+    VIRTIO_MMIO_QUEUE_NUM_MAX, VIRTIO_MMIO_QUEUE_READY, VIRTIO_MMIO_QUEUE_SEL, VIRTIO_MMIO_STATUS,
+    VIRTIO_MMIO_QUEUE_USED_LOW, VIRTIO_MMIO_QUEUE_USED_HIGH, VIRTIO_MMIO_VENDOR_ID,
+    VIRTIO_MMIO_VERSION,
 };
 
 pub const VIRTIO_MMIO_IO_SIZE: u64 = 0x200;
 
 struct VirtQueue {
-    pfn: u32,
+    ready: u32,
     size: u32,
     size_max: u32,
-    align: u32,
+    desc_lo: u32,
+    desc_hi: u32,
+    avail_lo: u32,
+    avail_hi: u32,
+    used_lo: u32,
+    used_hi: u32,
     queue: Option<Queue<GuestMemoryAtomic<GuestMemoryMmap>>>,
 
     // Guest to device
@@ -47,7 +50,6 @@ pub struct XenMmio {
     device_features_sel: u32,
     driver_features: u64,
     driver_features_sel: u32,
-    guest_page_size: u32,
     interrupt_state: u32,
     vq: Vec<VirtQueue>,
 
@@ -56,24 +58,41 @@ pub struct XenMmio {
 }
 
 impl XenMmio {
-    pub fn new(xdm: &mut XenDeviceModel, addr: u64) -> Result<Self> {
+    pub fn new(xdm: &mut XenDeviceModel, dev: &Generic, addr: u64) -> Result<Self> {
         xdm.map_io_range_to_ioreq_server(addr, VIRTIO_MMIO_IO_SIZE)?;
 
-        Ok(Self {
+        let mut mmio = Self {
             addr,
             magic: [b'v', b'i', b'r', b't'],
-            version: 1,
+            version: 2,
             vendor_id: 0x4d564b4c,
             status: 0,
             queue_sel: 0,
             device_features_sel: 0,
             driver_features: 0,
             driver_features_sel: 0,
-            guest_page_size: 0,
             interrupt_state: 0,
             vq: Vec::new(),
             ready: EventFd::new(EFD_NONBLOCK).unwrap(),
-        })
+        };
+
+        for size in dev.queue_max_sizes() {
+            mmio.vq.push(VirtQueue {
+                ready: 0,
+                size: 0,
+                size_max: *size as u32,
+                desc_lo: 0,
+                desc_hi: 0,
+                avail_lo: 0,
+                avail_hi: 0,
+                used_lo: 0,
+                used_hi: 0,
+                kick: EventFd::new(EFD_NONBLOCK).unwrap(),
+                queue: None,
+            });
+        }
+
+        Ok(mmio)
     }
 
     pub fn ready(&self) -> EventFd {
@@ -126,6 +145,8 @@ impl XenMmio {
     }
 
     fn handle_io_read(&self, ioreq: &mut ioreq, dev: &Generic, offset: u64) -> Result<()> {
+        let vq = &self.vq[self.queue_sel as usize];
+
         ioreq.data = match offset as u32 {
             VIRTIO_MMIO_MAGIC_VALUE => u32::from_le_bytes(self.magic),
             VIRTIO_MMIO_VERSION => self.version as u32,
@@ -133,10 +154,25 @@ impl XenMmio {
             VIRTIO_MMIO_VENDOR_ID => self.vendor_id,
             VIRTIO_MMIO_STATUS => self.status,
             VIRTIO_MMIO_INTERRUPT_STATUS => self.interrupt_state,
-            VIRTIO_MMIO_QUEUE_PFN => self.vq[self.queue_sel as usize].pfn,
-            VIRTIO_MMIO_QUEUE_NUM_MAX => self.vq[self.queue_sel as usize].size_max,
+            VIRTIO_MMIO_QUEUE_NUM_MAX => vq.size_max,
             VIRTIO_MMIO_DEVICE_FEATURES => {
-                (dev.device_features() >> (32 * self.device_features_sel)) as u32
+                if self.device_features_sel > 1 {
+                    return Err(Error::InvalidFeatureSel(self.device_features_sel));
+                }
+
+                let features = (1 << VIRTIO_F_VERSION_1) | dev.device_features();
+                (features >> (32 * self.device_features_sel)) as u32
+            }
+            VIRTIO_MMIO_QUEUE_READY => vq.ready,
+            VIRTIO_MMIO_QUEUE_DESC_LOW => vq.desc_lo,
+            VIRTIO_MMIO_QUEUE_DESC_HIGH => vq.desc_hi,
+            VIRTIO_MMIO_QUEUE_USED_LOW => vq.used_lo,
+            VIRTIO_MMIO_QUEUE_USED_HIGH => vq.used_hi,
+            VIRTIO_MMIO_QUEUE_AVAIL_LOW => vq.avail_lo,
+            VIRTIO_MMIO_QUEUE_AVAIL_HIGH => vq.avail_hi,
+            VIRTIO_MMIO_CONFIG_GENERATION => {
+                // TODO
+                0
             }
 
             _ => return Err(Error::InvalidMmioAddr("read", offset)),
@@ -152,53 +188,44 @@ impl XenMmio {
         gm: &XenGuestMem,
         offset: u64,
     ) -> Result<()> {
+        let vq = &mut self.vq[self.queue_sel as usize];
         match offset as u32 {
             VIRTIO_MMIO_DEVICE_FEATURES_SEL => self.device_features_sel = ioreq.data as u32,
             VIRTIO_MMIO_DRIVER_FEATURES_SEL => self.driver_features_sel = ioreq.data as u32,
+            VIRTIO_MMIO_QUEUE_SEL => self.queue_sel = ioreq.data as u32,
+            VIRTIO_MMIO_STATUS => self.status = ioreq.data as u32,
+            VIRTIO_MMIO_QUEUE_NUM => vq.size = ioreq.data as u32,
+            VIRTIO_MMIO_QUEUE_DESC_LOW => vq.desc_lo = ioreq.data as u32,
+            VIRTIO_MMIO_QUEUE_DESC_HIGH => vq.desc_hi = ioreq.data as u32,
+            VIRTIO_MMIO_QUEUE_USED_LOW => vq.used_lo = ioreq.data as u32,
+            VIRTIO_MMIO_QUEUE_USED_HIGH => vq.used_hi = ioreq.data as u32,
+            VIRTIO_MMIO_QUEUE_AVAIL_LOW => vq.avail_lo = ioreq.data as u32,
+            VIRTIO_MMIO_QUEUE_AVAIL_HIGH => vq.avail_hi = ioreq.data as u32,
+            VIRTIO_MMIO_INTERRUPT_ACK => {
+                self.interrupt_state &= !(ioreq.data as u32);
+            }
             VIRTIO_MMIO_DRIVER_FEATURES => {
                 self.driver_features |=
                     ((ioreq.data as u32) as u64) << (32 * self.driver_features_sel);
 
-                // Guest sends feature sel 1 first, followed by 0. Once that is done, lets
-                // negotiate features.
-                if self.driver_features_sel == 0 {
+                if self.driver_features_sel == 1 {
+                    if (self.driver_features & (1 << VIRTIO_F_VERSION_1)) == 0 {
+                        return Err(Error::MmioLegacyNotSupported);
+                    }
+                } else {
+                    // Guest sends feature sel 1 first, followed by 0. Once that is done, lets
+                    // negotiate features.
                     dev.negotiate_features(self.driver_features)
                         .map_err(Error::VhostMasterError)?;
-
-                    for size in dev.queue_max_sizes() {
-                        self.vq.push(VirtQueue {
-                            pfn: 0,
-                            size: 0,
-                            size_max: *size as u32,
-                            align: 0,
-                            kick: EventFd::new(EFD_NONBLOCK).unwrap(),
-                            queue: None,
-                        });
-                    }
                 }
             }
-            VIRTIO_MMIO_QUEUE_SEL => self.queue_sel = ioreq.data as u32,
-            VIRTIO_MMIO_STATUS => self.status = ioreq.data as u32,
-            VIRTIO_MMIO_GUEST_PAGE_SIZE => {
-                self.guest_page_size = ioreq.data as u32;
-                if self.guest_page_size != XC_PAGE_SIZE {
-                    panic!();
+            VIRTIO_MMIO_QUEUE_READY => {
+                self.vq[self.queue_sel as usize].ready = ioreq.data as u32;
+                if self.vq[self.queue_sel as usize].ready == 1 {
+                    self.init_vq(gm);
                 }
             }
-            VIRTIO_MMIO_QUEUE_NUM => self.vq[self.queue_sel as usize].size = ioreq.data as u32,
-            VIRTIO_MMIO_QUEUE_ALIGN => {
-                self.vq[self.queue_sel as usize].align = ioreq.data as u32;
-                if self.vq[self.queue_sel as usize].align != XC_PAGE_SIZE {
-                    panic!();
-                }
-            }
-            VIRTIO_MMIO_INTERRUPT_ACK => {
-                self.interrupt_state &= !(ioreq.data as u32);
-            }
-            VIRTIO_MMIO_QUEUE_PFN => self.init_vq(gm, ioreq.data),
-            VIRTIO_MMIO_QUEUE_NOTIFY => {
-                self.kick(ioreq.data)?;
-            }
+            VIRTIO_MMIO_QUEUE_NOTIFY => self.kick(ioreq.data)?,
 
             _ => return Err(Error::InvalidMmioAddr("write", offset)),
         }
@@ -206,33 +233,16 @@ impl XenMmio {
         Ok(())
     }
 
-    fn init_vq(&mut self, gm: &XenGuestMem, pfn: u64) {
-        if pfn == 0 {
-            println!("Exit vq here");
-            return;
-        }
-
-        let offset = pfn.checked_mul(self.guest_page_size as u64).unwrap();
+    fn init_vq(&mut self, gm: &XenGuestMem) {
         let vq = &mut self.vq[self.queue_sel as usize];
-        vq.pfn = pfn as u32;
 
-        // Physical addresses
-        let mut vring: vring = unsafe { mem::zeroed() };
+        let desc = ((vq.desc_hi as u64) << 32) | vq.desc_lo as u64 ;
+        let avail = ((vq.avail_hi as u64) << 32) | vq.avail_lo as u64 ;
+        let used = ((vq.used_hi as u64) << 32) | vq.used_lo as u64 ;
 
-        vring.num = vq.size;
-        vring.desc = offset as *mut vring_desc_t;
-        vring.avail = unsafe { vring.desc.offset(vq.size as isize) as *mut vring_avail_t };
-        let used = unsafe {
-            (*vring.avail)
-                .ring
-                .as_mut_ptr()
-                .offset((vq.size + 1) as isize) as *mut c_void
-        };
-        vring.used = unsafe { used.add(used.align_offset(vq.align as usize)) as *mut vring_used_t };
-
-        let desc = vring.desc as *const c_void as u64;
-        let used = vring.used as *const c_void as u64;
-        let avail = vring.avail as *const c_void as u64;
+        if desc == 0 || avail == 0 || used == 0 {
+            panic!();
+        }
 
         let mut queue =
             Queue::<GuestMemoryAtomic<GuestMemoryMmap>, QueueState>::new(gm.mem(), vq.size as u16);
