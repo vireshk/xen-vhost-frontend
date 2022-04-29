@@ -256,6 +256,13 @@ impl XenMmio {
 
         vq.queue = Some(queue);
 
+        // Wait for all virtqueues to get intialized.
+        for vq in &self.vq {
+            if vq.ready == 0 {
+                return;
+            }
+        }
+
         self.ready.write(1).unwrap();
     }
 
