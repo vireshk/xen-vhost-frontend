@@ -345,7 +345,7 @@ impl XsDev {
         Ok(())
     }
 
-    fn get_fe_domid(&mut self) -> Result<()> {
+    fn update_fe_domid(&mut self) -> Result<()> {
         let watch = XsReadWatch::new(self)?;
         if !self
             .path
@@ -398,7 +398,7 @@ impl XsDev {
         }
     }
 
-    pub fn wait_for_fe_domid(&mut self) -> Result<()> {
+    pub fn get_fe_domid(&mut self) -> Result<()> {
         let _watch = XsWatch::new(self, self.path.clone(), self.path.clone())?;
 
         loop {
@@ -418,7 +418,7 @@ impl XsDev {
                 match epoll.wait(-1, &mut events[..]) {
                     Ok(_) => {
                         let evset = events[0].event_set();
-                        if evset == EventSet::IN && self.get_fe_domid().is_ok() {
+                        if evset == EventSet::IN && self.update_fe_domid().is_ok() {
                             return Ok(());
                         } else {
                             thread::sleep(time::Duration::from_millis(100));

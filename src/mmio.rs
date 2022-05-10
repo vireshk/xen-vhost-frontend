@@ -15,11 +15,11 @@ use libxen_sys::{
     VIRTIO_MMIO_CONFIG_GENERATION, VIRTIO_MMIO_DEVICE_FEATURES, VIRTIO_MMIO_DEVICE_FEATURES_SEL,
     VIRTIO_MMIO_DEVICE_ID, VIRTIO_MMIO_DRIVER_FEATURES, VIRTIO_MMIO_DRIVER_FEATURES_SEL,
     VIRTIO_MMIO_INTERRUPT_ACK, VIRTIO_MMIO_INTERRUPT_STATUS, VIRTIO_MMIO_MAGIC_VALUE,
-    VIRTIO_MMIO_QUEUE_AVAIL_LOW, VIRTIO_MMIO_QUEUE_AVAIL_HIGH, VIRTIO_MMIO_QUEUE_DESC_LOW,
-    VIRTIO_MMIO_QUEUE_DESC_HIGH, VIRTIO_MMIO_QUEUE_NOTIFY, VIRTIO_MMIO_QUEUE_NUM,
-    VIRTIO_MMIO_QUEUE_NUM_MAX, VIRTIO_MMIO_QUEUE_READY, VIRTIO_MMIO_QUEUE_SEL, VIRTIO_MMIO_STATUS,
-    VIRTIO_MMIO_QUEUE_USED_LOW, VIRTIO_MMIO_QUEUE_USED_HIGH, VIRTIO_MMIO_VENDOR_ID,
-    VIRTIO_MMIO_VERSION,
+    VIRTIO_MMIO_QUEUE_AVAIL_HIGH, VIRTIO_MMIO_QUEUE_AVAIL_LOW, VIRTIO_MMIO_QUEUE_DESC_HIGH,
+    VIRTIO_MMIO_QUEUE_DESC_LOW, VIRTIO_MMIO_QUEUE_NOTIFY, VIRTIO_MMIO_QUEUE_NUM,
+    VIRTIO_MMIO_QUEUE_NUM_MAX, VIRTIO_MMIO_QUEUE_READY, VIRTIO_MMIO_QUEUE_SEL,
+    VIRTIO_MMIO_QUEUE_USED_HIGH, VIRTIO_MMIO_QUEUE_USED_LOW, VIRTIO_MMIO_STATUS,
+    VIRTIO_MMIO_VENDOR_ID, VIRTIO_MMIO_VERSION,
 };
 
 pub const VIRTIO_MMIO_IO_SIZE: u64 = 0x200;
@@ -236,9 +236,9 @@ impl XenMmio {
     fn init_vq(&mut self, gm: &XenGuestMem) {
         let vq = &mut self.vq[self.queue_sel as usize];
 
-        let desc = ((vq.desc_hi as u64) << 32) | vq.desc_lo as u64 ;
-        let avail = ((vq.avail_hi as u64) << 32) | vq.avail_lo as u64 ;
-        let used = ((vq.used_hi as u64) << 32) | vq.used_lo as u64 ;
+        let desc = ((vq.desc_hi as u64) << 32) | vq.desc_lo as u64;
+        let avail = ((vq.avail_hi as u64) << 32) | vq.avail_lo as u64;
+        let used = ((vq.used_hi as u64) << 32) | vq.used_lo as u64;
 
         if desc == 0 || avail == 0 || used == 0 {
             panic!();

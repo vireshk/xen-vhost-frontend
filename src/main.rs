@@ -126,12 +126,12 @@ fn create_device() -> Result<Generic> {
 }
 
 pub struct XenState {
-    xsd: XsDev,
+    mmio: XenMmio,
+    xdm: XenDeviceModel,
     xec: XenEvtChnHandle,
     xfm: XenForeignMemory,
-    xdm: XenDeviceModel,
     xgm: XenGuestMem,
-    mmio: XenMmio,
+    xsd: XsDev,
 }
 
 unsafe impl Send for XenState {}
@@ -141,7 +141,7 @@ impl XenState {
     pub fn new(dev: &Generic) -> Result<Self> {
         let mut xsd = XsDev::new(dev.name())?;
         xsd.get_be_domid()?;
-        xsd.wait_for_fe_domid()?;
+        xsd.get_fe_domid()?;
         xsd.connect_dom()?;
 
         println!(
