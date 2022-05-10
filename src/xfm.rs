@@ -11,11 +11,12 @@ use std::slice;
 use super::{Error, Result};
 use libxen_sys::{
     domid_t, ioreq, ioservid_t, shared_iopage, xen_pfn_t, xenforeignmemory_close,
-    xenforeignmemory_handle, xenforeignmemory_map, xenforeignmemory_open, xenforeignmemory_unmap,
-    xentoollog_logger, XENMEM_resource_ioreq_server, XC_PAGE_SHIFT,
+    xenforeignmemory_handle, xenforeignmemory_open, xentoollog_logger,
+    XENMEM_resource_ioreq_server, XC_PAGE_SHIFT,
 };
 use xen_ioctls::{
-    xenforeignmemory_map_resource, xenforeignmemory_unmap_resource, XenForeignMemoryResourceHandle,
+    xenforeignmemory_map, xenforeignmemory_map_resource, xenforeignmemory_unmap,
+    xenforeignmemory_unmap_resource, XenForeignMemoryResourceHandle,
 };
 
 pub struct XenForeignMemory {
@@ -96,28 +97,24 @@ impl XenForeignMemory {
             *pfn = base + i as u64;
         }
 
-        let addr = unsafe {
-            xenforeignmemory_map(
-                self.xfh,
-                domid as u32,
-                libc::PROT_READ | libc::PROT_WRITE,
-                num,
-                pfn.as_ptr(),
-                ptr::null_mut::<c_int>(),
-            )
-        };
-        if addr.is_null() {
-            Err(Error::XenForeignMemoryFailure)
-        } else {
-            self.addr.push((addr, num));
-            Ok(addr)
+        match xenforeignmemory_map(
+            domid,
+            libc::PROT_READ | libc::PROT_WRITE,
+            num,
+            pfn.as_ptr(),
+            ptr::null_mut::<c_int>(),
+        ) {
+            Ok(addr) => {
+                self.addr.push((addr, num));
+                Ok(addr)
+            }
+            Err(_) => Err(Error::XenForeignMemoryFailure),
         }
     }
 
     pub fn unmap_mem(&mut self) -> Result<()> {
         for (addr, n) in &self.addr {
-            let ret = unsafe { xenforeignmemory_unmap(self.xfh, *addr, *n) };
-            if ret < 0 {
+            if let Err(_) = xenforeignmemory_unmap(*addr, *n) {
                 println!("XenForeignMemory: failed to unmap: {:?}", (*addr, *n));
             }
         }
