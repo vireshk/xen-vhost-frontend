@@ -105,7 +105,7 @@ impl XenForeignMemory {
 
     pub fn unmap_mem(&mut self) -> Result<()> {
         for (addr, n) in &self.addr {
-            if let Err(_) = xenforeignmemory_unmap(*addr, *n) {
+            if xenforeignmemory_unmap(*addr, *n).is_err() {
                 println!("XenForeignMemory: failed to unmap: {:?}", (*addr, *n));
             }
         }
