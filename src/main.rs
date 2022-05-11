@@ -62,6 +62,8 @@ pub enum Error {
     XenEvtChnHandleFailure,
     #[error("Xen foreign memory failure")]
     XenForeignMemoryFailure,
+    #[error("Xen foreign memory failure: {0:?}")]
+    XenIoctlError(io::Error),
     #[error("Vhost user master error")]
     VhostMasterError(vhost_user_master::Error),
     #[error("Failed to connect to xenstore")]

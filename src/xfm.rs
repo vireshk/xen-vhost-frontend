@@ -35,7 +35,7 @@ impl XenForeignMemory {
 
     pub fn map_resource(&mut self, domid: domid_t, id: ioservid_t) -> Result<()> {
         let paddr = ptr::null_mut::<c_void>();
-        xenforeignmemory_map_resource(
+        let resource_handle = xenforeignmemory_map_resource(
             domid,
             XENMEM_resource_ioreq_server,
             id as u32,
@@ -45,25 +45,21 @@ impl XenForeignMemory {
             libc::PROT_READ | libc::PROT_WRITE,
             0,
         )
-        .map_or(Err(Error::XenForeignMemoryFailure), |resource_handle| {
-            let offset = offset_of!(shared_iopage => vcpu_ioreq).get_byte_offset();
-            self.ioreq = unsafe { resource_handle.addr.add(offset) } as *mut ioreq;
-            self.res = Some(resource_handle);
-            Ok(())
-        })
+        .map_err(Error::XenIoctlError)?;
+
+        let offset = offset_of!(shared_iopage => vcpu_ioreq).get_byte_offset();
+        self.ioreq = unsafe { resource_handle.addr.add(offset) } as *mut ioreq;
+        self.res = Some(resource_handle);
+        Ok(())
     }
 
     fn unmap_resource(&mut self) -> Result<()> {
-        match &self.res {
-            Some(res) => xenforeignmemory_unmap_resource(res).map_or(
-                Err(Error::XenForeignMemoryFailure),
-                |_| {
-                    self.res = None;
-                    Ok(())
-                },
-            ),
-            None => Ok(()),
+        if let Some(res) = &self.res {
+            xenforeignmemory_unmap_resource(res).map_err(Error::XenIoctlError)?;
+            self.res = None;
         }
+
+        Ok(())
     }
 
     fn ioreq_offset(&self, vcpu: u32) -> *mut ioreq {
@@ -88,19 +84,17 @@ impl XenForeignMemory {
             *pfn = base + i as u64;
         }
 
-        match xenforeignmemory_map(
+        let addr = xenforeignmemory_map(
             domid,
             libc::PROT_READ | libc::PROT_WRITE,
             num,
             pfn.as_ptr(),
             ptr::null_mut::<c_int>(),
-        ) {
-            Ok(addr) => {
-                self.addr.push((addr, num));
-                Ok(addr)
-            }
-            Err(_) => Err(Error::XenForeignMemoryFailure),
-        }
+        )
+        .map_err(Error::XenIoctlError)?;
+
+        self.addr.push((addr, num));
+        Ok(addr)
     }
 
     pub fn unmap_mem(&mut self) -> Result<()> {
