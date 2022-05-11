@@ -10,9 +10,8 @@ use std::slice;
 
 use super::{Error, Result};
 use libxen_sys::{
-    domid_t, ioreq, ioservid_t, shared_iopage, xen_pfn_t, xenforeignmemory_close,
-    xenforeignmemory_handle, xenforeignmemory_open, xentoollog_logger,
-    XENMEM_resource_ioreq_server, XC_PAGE_SHIFT,
+    domid_t, ioreq, ioservid_t, shared_iopage, xen_pfn_t, XENMEM_resource_ioreq_server,
+    XC_PAGE_SHIFT,
 };
 use xen_ioctls::{
     xenforeignmemory_map, xenforeignmemory_map_resource, xenforeignmemory_unmap,
@@ -20,7 +19,6 @@ use xen_ioctls::{
 };
 
 pub struct XenForeignMemory {
-    xfh: *mut xenforeignmemory_handle,
     res: Option<XenForeignMemoryResourceHandle>,
     ioreq: *mut ioreq,
     addr: Vec<(*mut c_void, u64)>,
@@ -28,14 +26,7 @@ pub struct XenForeignMemory {
 
 impl XenForeignMemory {
     pub fn new() -> Result<Self> {
-        let xfh = unsafe { xenforeignmemory_open(ptr::null_mut::<xentoollog_logger>(), 0) };
-
-        if xfh.is_null() {
-            return Err(Error::XenForeignMemoryFailure);
-        }
-
         Ok(Self {
-            xfh,
             res: None,
             ioreq: ptr::null_mut::<ioreq>(),
             addr: Vec::new(),
@@ -127,9 +118,5 @@ impl Drop for XenForeignMemory {
     fn drop(&mut self) {
         self.unmap_mem().unwrap();
         self.unmap_resource().unwrap();
-
-        unsafe {
-            xenforeignmemory_close(self.xfh);
-        }
     }
 }
