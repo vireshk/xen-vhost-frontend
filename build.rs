@@ -1,6 +1,5 @@
 fn main() {
     println!("cargo:rustc-link-lib=xenstore");
-    println!("cargo:rustc-link-lib=xenforeignmemory");
     println!("cargo:rustc-link-lib=xenevtchn");
     println!("cargo:rustc-link-lib=xendevicemodel");
     println!("cargo:rustc-link-lib=xentoolcore");
