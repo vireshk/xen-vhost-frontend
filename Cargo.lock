@@ -435,9 +435,10 @@ checksum = "712e227841d057c1ee1cd2fb22fa7e5a5461ae8e48fa2ca79ec42cfc1931183f"
 [[package]]
 name = "xen-ioctls"
 version = "0.0.0-pre1"
-source = "git+https://gitlab.com/mathieupoirier/oxerun/?branch=xen-ioctls#37364288517096f09e3f513d4131fd2020d91df9"
+source = "git+https://gitlab.com/mathieupoirier/oxerun/?branch=xen-ioctls#2d622825aa012850e3ac241b6d690f278cc4ba38"
 dependencies = [
  "libc",
+ "vmm-sys-util",
 ]
 
 [[package]]
