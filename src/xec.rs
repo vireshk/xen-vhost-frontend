@@ -13,11 +13,7 @@ pub struct XenEvtChnHandle {
 
 impl XenEvtChnHandle {
     pub fn new() -> Result<Self> {
-        let channel = XenEventChannel::new()
-            .map_err(|_| {
-                return Error::XenEvtChnHandleFailure;
-            })
-            .unwrap();
+        let channel = XenEventChannel::new().map_err(Error::XenIoctlError)?;
 
         Ok(Self {
             channel,
@@ -29,14 +25,11 @@ impl XenEvtChnHandle {
         for cpu in 0..vcpus {
             let ioreq = xfm.ioreq(cpu)?;
 
-            match self.channel.bind_interdomain(domid as u32, ioreq.vp_eport) {
-                Ok(local_port) => {
-                    self.ports.push(local_port);
-                }
-                Err(_) => {
-                    return Err(Error::XenEvtChnHandleFailure);
-                }
-            }
+            self.ports.push(
+                self.channel
+                    .bind_interdomain(domid as u32, ioreq.vp_eport)
+                    .map_err(Error::XenIoctlError)?,
+            );
         }
         Ok(())
     }
@@ -50,31 +43,22 @@ impl XenEvtChnHandle {
     }
 
     pub fn fd(&self) -> Result<u32> {
-        self.channel
-            .fd()
-            .map_or(Err(Error::XenEvtChnHandleFailure), |fd| Ok(fd as u32))
+        Ok(self.channel.fd().map_err(Error::XenIoctlError)? as u32)
     }
 
     pub fn pending(&mut self) -> Result<(u32, u32)> {
-        self.channel
-            .pending()
-            .map_or(Err(Error::XenEvtChnHandleFailure), |port| {
-                let cpu = self.ports.iter().position(|&x| x == port).unwrap();
-                Ok((port, cpu as u32))
-            })
+        let port = self.channel.pending().map_err(Error::XenIoctlError)?;
+        let cpu = self.ports.iter().position(|&x| x == port).unwrap();
+        Ok((port, cpu as u32))
     }
 
     pub fn unmask(&mut self, port: u32) -> Result<()> {
-        self.channel
-            .unmask(port)
-            .map_err(|_| Error::XenEvtChnHandleFailure)
+        self.channel.unmask(port).map_err(Error::XenIoctlError)
     }
 
     pub fn notify(&self, port: u32) -> Result<()> {
-        match self.channel.notify(port) {
-            Ok(_) => Ok(()),
-            Err(_) => Err(Error::XenEvtChnHandleFailure),
-        }
+        self.channel.notify(port).map_err(Error::XenIoctlError)?;
+        Ok(())
     }
 }
 

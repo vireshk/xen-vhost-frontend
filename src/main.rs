@@ -58,8 +58,6 @@ pub enum Error {
     InvalidMmioDir(u8),
     #[error("Xen device model failure")]
     XenDeviceModelFailure,
-    #[error("Xen event channel handle failure")]
-    XenEvtChnHandleFailure,
     #[error("Xen foreign memory failure")]
     XenForeignMemoryFailure,
     #[error("Xen foreign memory failure: {0:?}")]
