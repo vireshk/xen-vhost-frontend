@@ -35,7 +35,7 @@ use libxen_sys::{
 };
 use mmio::XenMmio;
 use xdm::XenDeviceModel;
-use xec::XenEvtChnHandle;
+use xec::XenEventChannel;
 use xfm::XenForeignMemory;
 use xgm::XenGuestMem;
 use xs::{XsDev, XsReadWatch};
@@ -128,7 +128,7 @@ fn create_device() -> Result<Generic> {
 pub struct XenState {
     mmio: XenMmio,
     xdm: XenDeviceModel,
-    xec: XenEvtChnHandle,
+    xec: XenEventChannel,
     xfm: XenForeignMemory,
     xgm: XenGuestMem,
     xsd: XsDev,
@@ -157,7 +157,7 @@ impl XenState {
         xfm.map_resource(xsd.fe_domid(), xdm.ioserver_id())?;
         xdm.set_ioreq_server_state(1)?;
 
-        let mut xec = XenEvtChnHandle::new()?;
+        let mut xec = XenEventChannel::new()?;
         xec.bind(&xfm, xsd.fe_domid(), xdm.vcpus())?;
 
         let xgm = XenGuestMem::new(&mut xfm, xsd.fe_domid())?;

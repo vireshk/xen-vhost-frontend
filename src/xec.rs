@@ -6,12 +6,12 @@
 use super::{xfm::XenForeignMemory, Error, Result};
 use xen_ioctls::XenEventChannelHandle;
 
-pub struct XenEvtChnHandle {
+pub struct XenEventChannel {
     channel: XenEventChannelHandle,
     ports: Vec<u32>,
 }
 
-impl XenEvtChnHandle {
+impl XenEventChannel {
     pub fn new() -> Result<Self> {
         let channel = XenEventChannelHandle::new().map_err(Error::XenIoctlError)?;
 
@@ -37,7 +37,7 @@ impl XenEvtChnHandle {
     pub fn unbind(&self) {
         for port in &self.ports {
             if let Err(_) = self.channel.unbind(*port) {
-                println!("XenEvtChnHandle: Failed to unbind port: {}", *port);
+                println!("XenEventChannel: Failed to unbind port: {}", *port);
             }
         }
     }
@@ -62,7 +62,7 @@ impl XenEvtChnHandle {
     }
 }
 
-impl Drop for XenEvtChnHandle {
+impl Drop for XenEventChannel {
     fn drop(&mut self) {
         self.unbind();
     }
