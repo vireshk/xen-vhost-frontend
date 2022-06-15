@@ -53,7 +53,7 @@ impl XenInterrupt {
                 .name(format!("interrupt {}", dev.dev_id))
                 .spawn(move || {
                     while let Ok(fd) = epoll.wait() {
-                        if fd == ifd as i32 {
+                        if fd == ifd {
                             interrupt.trigger(VirtioInterruptType::Queue(0)).unwrap();
                         } else if dev.xs_event().is_err() {
                             dev.gdev.lock().unwrap().reset();

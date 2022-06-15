@@ -13,7 +13,6 @@ mod supported_devices;
 mod xdm;
 mod xec;
 mod xfm;
-mod xgm;
 mod xs;
 
 use std::{io, num::ParseIntError, str, thread::Builder};

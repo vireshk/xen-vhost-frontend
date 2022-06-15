@@ -4,23 +4,19 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use field_offset::offset_of;
-use std::os::raw::{c_int, c_void};
+use std::os::raw::c_void;
 use std::ptr;
 use std::slice;
 
 use super::{Error, Result};
-use xen_bindings::bindings::{
-    ioreq, ioservid_t, shared_iopage, xen_pfn_t, XENMEM_resource_ioreq_server, XC_PAGE_SHIFT,
-};
+use xen_bindings::bindings::{ioreq, ioservid_t, shared_iopage, XENMEM_resource_ioreq_server};
 use xen_ioctls::{
-    xenforeignmemory_map, xenforeignmemory_map_resource, xenforeignmemory_unmap,
-    xenforeignmemory_unmap_resource, XenForeignMemoryResourceHandle,
+    xenforeignmemory_map_resource, xenforeignmemory_unmap_resource, XenForeignMemoryResourceHandle,
 };
 
 pub struct XenForeignMemory {
     res: Option<XenForeignMemoryResourceHandle>,
     ioreq: *mut ioreq,
-    addr: Vec<(*mut c_void, u64)>,
 }
 
 impl XenForeignMemory {
@@ -28,7 +24,6 @@ impl XenForeignMemory {
         Ok(Self {
             res: None,
             ioreq: ptr::null_mut::<ioreq>(),
-            addr: Vec::new(),
         })
     }
 
@@ -74,46 +69,10 @@ impl XenForeignMemory {
         // SAFETY: Safe as we slice is guaranteed to be valid.
         Ok(unsafe { &mut slice::from_raw_parts_mut(ioreq, 1)[0] })
     }
-
-    pub fn map_mem(&mut self, domid: u16, paddr: u64, size: u64) -> Result<*mut c_void> {
-        let base = paddr >> XC_PAGE_SHIFT;
-        let mut num = size >> XC_PAGE_SHIFT;
-        if num << XC_PAGE_SHIFT != size {
-            num += 1;
-        }
-
-        let mut pfn: Vec<xen_pfn_t> = vec![0; num as usize];
-        for (i, pfn) in pfn.iter_mut().enumerate().take(num as usize) {
-            *pfn = base + i as u64;
-        }
-
-        let addr = xenforeignmemory_map(
-            domid,
-            libc::PROT_READ | libc::PROT_WRITE,
-            num,
-            pfn.as_ptr(),
-            ptr::null_mut::<c_int>(),
-        )
-        .map_err(Error::XenIoctlError)?;
-
-        self.addr.push((addr, num));
-        Ok(addr)
-    }
-
-    pub fn unmap_mem(&mut self) -> Result<()> {
-        for (addr, n) in &self.addr {
-            if xenforeignmemory_unmap(*addr, *n).is_err() {
-                println!("XenForeignMemory: failed to unmap: {:?}", (*addr, *n));
-            }
-        }
-
-        Ok(())
-    }
 }
 
 impl Drop for XenForeignMemory {
     fn drop(&mut self) {
-        self.unmap_mem().unwrap();
         self.unmap_resource().unwrap();
     }
 }

@@ -31,6 +31,9 @@ struct DeviceArgs {
     /// Location of vhost-user Unix domain socket.
     #[clap(short, long)]
     socket_path: String,
+    /// Memory mapping, foreign or grant.
+    #[clap(short, long)]
+    foreign_mapping: bool,
 }
 
 struct DeviceInfo {
@@ -64,10 +67,7 @@ lazy_static! {
         }
         Mutex::new(map)
     };
-    static ref SOCKET_PATH: String = {
-        let args = DeviceArgs::parse();
-        args.socket_path
-    };
+    static ref DEVICE_ARGS: DeviceArgs = DeviceArgs::parse();
 }
 
 pub struct XenDevice {
@@ -102,7 +102,7 @@ impl XenDevice {
         let (num, size) = device_type.queue_num_and_size();
 
         let vu_cfg = VhostUserConfig {
-            socket: SOCKET_PATH.to_owned() + dev.name + ".sock" + &dev.index(),
+            socket: DEVICE_ARGS.socket_path.to_owned() + dev.name + ".sock" + &dev.index(),
             num_queues: num,
             queue_size: size as u16,
         };
@@ -120,7 +120,7 @@ impl XenDevice {
         )
         .map_err(Error::VhostFrontendError)?;
 
-        let mmio = XenMmio::new(&gdev, addr)?;
+        let mmio = XenMmio::new(&gdev, addr, DEVICE_ARGS.foreign_mapping, guest.fe_domid)?;
 
         let dev = Arc::new(Self {
             gdev: Mutex::new(gdev),

@@ -43,7 +43,7 @@ impl XenDeviceModel {
     pub fn create_ioreq_server(&mut self) -> Result<()> {
         self.id = Some(
             self.xdmh
-                .create_ioreq_server(self.domid, HVM_IOREQSRV_BUFIOREQ_OFF as u8)
+                .create_ioreq_server(self.domid, HVM_IOREQSRV_BUFIOREQ_OFF)
                 .map_err(Error::XenIoctlError)?,
         );
 

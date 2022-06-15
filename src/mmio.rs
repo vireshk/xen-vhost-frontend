@@ -3,9 +3,12 @@
 //
 // SPDX-License-Identifier: Apache-2.0
 
-use vhost::vhost_user::message::VHOST_USER_CONFIG_OFFSET;
+use std::fs::OpenOptions;
+
+use vhost::vhost_user::message::{VhostUserProtocolFeatures, VHOST_USER_CONFIG_OFFSET};
 use vhost_user_frontend::{Generic, VirtioDevice};
-use virtio_bindings::virtio_config::VIRTIO_F_VERSION_1;
+use vhost_user_frontend::{GuestMemoryMmap, GuestRegionMmap};
+use virtio_bindings::virtio_config::{VIRTIO_F_IOMMU_PLATFORM, VIRTIO_F_VERSION_1};
 use virtio_bindings::virtio_mmio::{
     VIRTIO_MMIO_CONFIG_GENERATION, VIRTIO_MMIO_DEVICE_FEATURES, VIRTIO_MMIO_DEVICE_FEATURES_SEL,
     VIRTIO_MMIO_DEVICE_ID, VIRTIO_MMIO_DRIVER_FEATURES, VIRTIO_MMIO_DRIVER_FEATURES_SEL,
@@ -16,12 +19,39 @@ use virtio_bindings::virtio_mmio::{
     VIRTIO_MMIO_QUEUE_USED_HIGH, VIRTIO_MMIO_QUEUE_USED_LOW, VIRTIO_MMIO_STATUS,
     VIRTIO_MMIO_VENDOR_ID, VIRTIO_MMIO_VERSION,
 };
-use virtio_queue::{Queue, QueueT};
+use virtio_bindings::virtio_ring::{__virtio16, vring_avail, vring_used, vring_used_elem};
+use virtio_queue::{Descriptor, Queue, QueueT};
 use vm_memory::ByteValued;
+use vm_memory::{
+    guest_memory::FileOffset,
+    mmap_xen::{MmapXenFlags, MmapXenForeign, MmapXenGrant},
+    GuestAddress, GuestMemoryAtomic, GuestMemoryRegion, MmapInternal,
+};
+
 use vmm_sys_util::eventfd::{EventFd, EFD_NONBLOCK};
 
 use super::{device::XenDevice, Error, Result};
-use xen_bindings::bindings::{ioreq, IOREQ_READ, IOREQ_WRITE};
+use xen_bindings::bindings::{ioreq, IOREQ_READ, IOREQ_WRITE, XC_PAGE_SHIFT, XC_PAGE_SIZE};
+use xen_ioctls::xc_domain_info;
+
+const GUEST_RAM0_BASE: u64 = 0x40000000; // 3GB of low RAM @ 1GB
+const XEN_GRANT_ADDR_OFF: u64 = 1 << 63;
+
+fn get_dom_size(domid: u16) -> Result<usize> {
+    let info = xc_domain_info(domid, 1);
+
+    if info.len() != 1 {
+        Err(Error::InvalidDomainInfo(info.len(), domid, 0))
+    } else if info[0].domid != domid {
+        Err(Error::InvalidDomainInfo(
+            info.len(),
+            domid,
+            info[0].domid as usize,
+        ))
+    } else {
+        Ok((info[0].nr_pages as usize - 4) << XC_PAGE_SHIFT)
+    }
+}
 
 struct VirtQueue {
     ready: u32,
@@ -52,11 +82,15 @@ pub struct XenMmio {
     queues_count: usize,
     queues: Vec<(usize, Queue, EventFd)>,
     vq: Vec<VirtQueue>,
+    regions: Vec<GuestRegionMmap>,
+    foreign_mapping: bool,
+    guest_size: usize,
 }
 
 impl XenMmio {
-    pub fn new(gdev: &Generic, addr: u64) -> Result<Self> {
+    pub fn new(gdev: &Generic, addr: u64, foreign_mapping: bool, domid: u16) -> Result<Self> {
         let sizes = gdev.queue_max_sizes();
+        let guest_size = get_dom_size(domid)?;
 
         let mut mmio = Self {
             addr,
@@ -72,6 +106,9 @@ impl XenMmio {
             queues_count: sizes.len(),
             queues: Vec::with_capacity(sizes.len()),
             vq: Vec::new(),
+            regions: Vec::new(),
+            foreign_mapping,
+            guest_size,
         };
 
         for size in sizes {
@@ -87,6 +124,12 @@ impl XenMmio {
                 used_hi: 0,
                 kick: EventFd::new(EFD_NONBLOCK).unwrap(),
             });
+        }
+
+        // Foreign memory must be mapped in advance as it takes considerable amount of time to do
+        // it, and doing it later times out the guest kernel.
+        if foreign_mapping {
+            mmio.map_foreign_region(domid)?;
         }
 
         Ok(mmio)
@@ -124,7 +167,7 @@ impl XenMmio {
         ioreq.data = match offset as u32 {
             VIRTIO_MMIO_MAGIC_VALUE => u32::from_le_bytes(self.magic),
             VIRTIO_MMIO_VERSION => self.version as u32,
-            VIRTIO_MMIO_DEVICE_ID => gdev.device_type() as u32,
+            VIRTIO_MMIO_DEVICE_ID => gdev.device_type(),
             VIRTIO_MMIO_VENDOR_ID => self.vendor_id,
             VIRTIO_MMIO_STATUS => self.status,
             VIRTIO_MMIO_INTERRUPT_STATUS => self.interrupt_state,
@@ -134,7 +177,9 @@ impl XenMmio {
                     return Err(Error::InvalidFeatureSel(self.device_features_sel));
                 }
 
-                let features = (1 << VIRTIO_F_VERSION_1) | gdev.device_features();
+                let mut features = gdev.device_features();
+                features |= 1 << VIRTIO_F_VERSION_1;
+                features |= 1 << VIRTIO_F_IOMMU_PLATFORM;
                 (features >> (32 * self.device_features_sel)) as u32
             }
             VIRTIO_MMIO_QUEUE_READY => vq.ready,
@@ -187,17 +232,20 @@ impl XenMmio {
                     dev.gdev
                         .lock()
                         .unwrap()
-                        .negotiate_features(self.driver_features)
+                        .negotiate_features(
+                            self.driver_features,
+                            VhostUserProtocolFeatures::XEN_MMAP,
+                        )
                         .map_err(Error::VhostFrontendError)?;
                 }
             }
             VIRTIO_MMIO_QUEUE_READY => {
                 if ioreq.data == 1 {
-                    self.init_vq();
+                    self.init_vq(dev.guest.fe_domid)?;
 
                     // Wait for all virtqueues to get initialized.
                     if self.queues.len() == self.queues_count {
-                        self.activate_device(dev)?;
+                        self.activate_device(dev, dev.guest.fe_domid)?;
                     }
                 } else {
                     self.destroy_vq();
@@ -211,8 +259,110 @@ impl XenMmio {
         Ok(())
     }
 
-    fn init_vq(&mut self) {
+    fn sort_regions(&mut self) {
+        self.regions
+            .sort_by(|a, b| a.start_addr().partial_cmp(&b.start_addr()).unwrap());
+    }
+
+    fn map_region<M: MmapInternal>(
+        &mut self,
+        addr: GuestAddress,
+        size: usize,
+        path: &str,
+        map: M,
+    ) -> Result<()> {
+        let file = OpenOptions::new()
+            .read(true)
+            .write(true)
+            .open(path)
+            .unwrap();
+
+        let file_offset = Some(FileOffset::new(file, 0));
+        let region = GuestRegionMmap::from_range_with_map(map, addr, size, file_offset).unwrap();
+
+        self.regions.push(region);
+
+        Ok(())
+    }
+
+    fn map_foreign_region(&mut self, domid: u16) -> Result<()> {
+        let addr = GuestAddress(GUEST_RAM0_BASE);
+        let map = MmapXenForeign::new_with(domid as u32, addr, 0).unwrap();
+
+        self.map_region(addr, self.guest_size, "/dev/xen/privcmd", map)
+    }
+
+    // Maps entire guest address space in one region.
+    //
+    // The address received here is special as the kernel ORs the address with 0x8000000000000000
+    // to mark it for grant mapping. If the memory mapping fails for a device here and address
+    // doesn't have the top bit set, then either the guest kernel's DT doesn't have the required
+    // iommu nodes or it is missing some Kconfig options.
+    //
+    // Hint: XEN_GRANT_DMA_ADDR_OFF in drivers/xen/grant-dma-ops.c.
+    fn map_grant_region(&mut self, addr: u64, size: usize, domid: u16, flags: u32) -> Result<()> {
+        if size == 0 {
+            return Ok(());
+        }
+
+        let addr = GuestAddress(addr);
+        let map = MmapXenGrant::new_with(domid as u32, addr, flags).unwrap();
+
+        self.map_region(addr, size, "/dev/xen/gntdev", map)
+    }
+
+    // Maps virtqueues in advance.
+    fn map_grant_queue_regions(&mut self, queue: &Queue, vq_size: usize, domid: u16) -> Result<()> {
+        let mut size = vq_size * std::mem::size_of::<Descriptor>();
+        self.map_grant_region(queue.desc_table(), size, domid, 0)?;
+
+        size = vq_size * std::mem::size_of::<__virtio16>();
+        size += std::mem::size_of::<vring_avail>();
+        self.map_grant_region(queue.avail_ring(), size, domid, 0)?;
+
+        size = vq_size * std::mem::size_of::<vring_used_elem>();
+        size += std::mem::size_of::<vring_used>();
+        // Extra 2 bytes for vring_used_elem at the end of used ring
+        size += std::mem::size_of::<__virtio16>();
+        self.map_grant_region(queue.used_ring(), size, domid, 0)?;
+
+        Ok(())
+    }
+
+    // Maps non-virtqueues memory with no advance map flag.
+    fn map_grant_remaining_regions(&mut self, domid: u16) -> Result<()> {
+        // Sort the already added regions by start address.
+        self.sort_regions();
+
+        let mut regions: Vec<GuestRegionMmap> = self.regions.drain(..).collect();
+        let mut offset = XEN_GRANT_ADDR_OFF;
+
+        for region in &regions {
+            let size = (region.start_addr().0 - offset) as usize;
+            self.map_grant_region(offset, size, domid, MmapXenFlags::NO_ADVANCE_MAP.bits())?;
+            offset = region.start_addr().0 + region.len() + XC_PAGE_SIZE as u64 - 1;
+            offset = (offset >> XC_PAGE_SHIFT) << XC_PAGE_SHIFT;
+        }
+
+        // Regions are mapped from address 0 until end of all virtqueues, lets map the rest now.
+        self.map_grant_region(
+            offset,
+            self.guest_size - (offset - XEN_GRANT_ADDR_OFF) as usize,
+            domid,
+            MmapXenFlags::NO_ADVANCE_MAP.bits(),
+        )?;
+        self.regions.append(&mut regions);
+
+        // Sort the already added regions by start address.
+        self.sort_regions();
+
+        Ok(())
+    }
+
+    fn init_vq(&mut self, domid: u16) -> Result<()> {
         let vq = &mut self.vq[self.queue_sel as usize];
+        let kick = vq.kick.try_clone().unwrap();
+        let vq_size = vq.size;
 
         let desc = ((vq.desc_hi as u64) << 32) | vq.desc_lo as u64;
         let avail = ((vq.avail_hi as u64) << 32) | vq.avail_lo as u64;
@@ -222,7 +372,7 @@ impl XenMmio {
             panic!();
         }
 
-        let mut queue = Queue::new(vq.size as u16).unwrap();
+        let mut queue = Queue::new(vq_size as u16).unwrap();
         queue.set_desc_table_address(Some((desc & 0xFFFFFFFF) as u32), Some((desc >> 32) as u32));
         queue.set_avail_ring_address(
             Some((avail & 0xFFFFFFFF) as u32),
@@ -231,24 +381,37 @@ impl XenMmio {
         queue.set_used_ring_address(Some((used & 0xFFFFFFFF) as u32), Some((used >> 32) as u32));
         queue.set_next_avail(0);
 
-        self.queues
-            .push((self.queue_sel as usize, queue, vq.kick.try_clone().unwrap()));
         vq.ready = 1;
+
+        if !self.foreign_mapping {
+            self.map_grant_queue_regions(&queue, vq_size as usize, domid)?;
+        }
+
+        self.queues.push((self.queue_sel as usize, queue, kick));
+
+        Ok(())
     }
 
     fn destroy_vq(&mut self) {
         self.queues.drain(..);
     }
 
-    fn activate_device(&mut self, dev: &XenDevice) -> Result<()> {
+    fn mem(&mut self) -> GuestMemoryAtomic<GuestMemoryMmap> {
+        GuestMemoryAtomic::new(
+            GuestMemoryMmap::from_regions(self.regions.drain(..).collect()).unwrap(),
+        )
+    }
+
+    fn activate_device(&mut self, dev: &XenDevice, domid: u16) -> Result<()> {
+        // Map rest of the memory, now that all the queues are mapped.
+        if !self.foreign_mapping {
+            self.map_grant_remaining_regions(domid)?;
+        }
+
         dev.gdev
             .lock()
             .unwrap()
-            .activate(
-                dev.guest.mem(),
-                dev.interrupt(),
-                self.queues.drain(..).collect(),
-            )
+            .activate(self.mem(), dev.interrupt(), self.queues.drain(..).collect())
             .map_err(Error::VhostFrontendActivateError)
     }
 

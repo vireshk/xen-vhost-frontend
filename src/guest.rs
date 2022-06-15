@@ -9,8 +9,6 @@ use std::{
     thread::{Builder, JoinHandle},
 };
 
-use vhost_user_frontend::GuestMemoryMmap;
-use vm_memory::GuestMemoryAtomic;
 use vmm_sys_util::eventfd::{EventFd, EFD_NONBLOCK};
 use xen_bindings::bindings::{
     ioreq, IOREQ_TYPE_COPY, IOREQ_TYPE_INVALIDATE, STATE_IOREQ_INPROCESS, STATE_IOREQ_READY,
@@ -19,7 +17,7 @@ use xen_bindings::bindings::{
 
 use super::{
     device::XenDevice, epoll::XenEpoll, xdm::XenDeviceModel, xec::XenEventChannel,
-    xfm::XenForeignMemory, xgm::XenGuestMem, Result,
+    xfm::XenForeignMemory, Result,
 };
 
 #[derive(Default)]
@@ -55,7 +53,6 @@ pub struct XenGuest {
     pub xdm: Mutex<XenDeviceModel>,
     xec: Mutex<XenEventChannel>,
     xfm: Mutex<XenForeignMemory>,
-    xgm: XenGuestMem,
     pub fe_domid: u16,
     devices: Mutex<GuestDevices>,
     handle: Mutex<Option<JoinHandle<()>>>,
@@ -79,13 +76,10 @@ impl XenGuest {
         let mut xec = XenEventChannel::new()?;
         xec.bind(&xfm, fe_domid, xdm.vcpus())?;
 
-        let xgm = XenGuestMem::new(&mut xfm, fe_domid)?;
-
         let guest = Arc::new(Self {
             xdm: Mutex::new(xdm),
             xec: Mutex::new(xec),
             xfm: Mutex::new(xfm),
-            xgm,
             fe_domid,
             devices: Mutex::new(GuestDevices::default()),
             handle: Mutex::new(None),
@@ -177,10 +171,6 @@ impl XenGuest {
 
     pub fn is_empty(&self) -> bool {
         self.devices.lock().unwrap().is_empty()
-    }
-
-    pub fn mem(&self) -> GuestMemoryAtomic<GuestMemoryMmap> {
-        self.xgm.mem()
     }
 
     pub fn exit(&self) {
