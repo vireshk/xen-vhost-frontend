@@ -4,16 +4,16 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::{xfm::XenForeignMemory, Error, Result};
-use xen_ioctls::XenEventChannel;
+use xen_ioctls::XenEventChannelHandle;
 
 pub struct XenEvtChnHandle {
-    channel: XenEventChannel,
+    channel: XenEventChannelHandle,
     ports: Vec<u32>,
 }
 
 impl XenEvtChnHandle {
     pub fn new() -> Result<Self> {
-        let channel = XenEventChannel::new().map_err(Error::XenIoctlError)?;
+        let channel = XenEventChannelHandle::new().map_err(Error::XenIoctlError)?;
 
         Ok(Self {
             channel,
