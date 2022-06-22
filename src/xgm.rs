@@ -24,7 +24,7 @@ fn get_dom_mem(domid: domid_t) -> Result<u64> {
     let info = xc_domain_info(domid, 1);
 
     if info.len() != 1 || info[0].domid != domid {
-        Err(Error::InvalidDomainInfo(info.len(), domid, info[0].domid))
+        Err(Error::InvalidDomainInfo(info.len(), domid, info.len()))
     } else {
         Ok((info[0].nr_pages - 4) << XC_PAGE_SHIFT)
     }

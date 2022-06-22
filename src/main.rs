@@ -46,8 +46,8 @@ pub type Result<T> = std::result::Result<T, Error>;
 /// Error codes for xen-vhost-master operations
 #[derive(Debug, ThisError)]
 pub enum Error {
-    #[error("Invalid Domain info, len {0:?}, domid expected {1:?} actual {2:?}")]
-    InvalidDomainInfo(usize, domid_t, domid_t),
+    #[error("Invalid Domain info, len {0:?}, domid expected {1:?} info length {2:?}")]
+    InvalidDomainInfo(usize, domid_t, usize),
     #[error("Invalid MMIO {0:} Address {1:?}")]
     InvalidMmioAddr(&'static str, u64),
     #[error("MMIO Legacy not supported by Guest")]
