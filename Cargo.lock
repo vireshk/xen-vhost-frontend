@@ -349,7 +349,7 @@ dependencies = [
 [[package]]
 name = "vhost-user-master"
 version = "0.1.0"
-source = "git+https://github.com/vireshk/vhost-user-master#d11ff5f9504e1f66d043d08c03cc867c5ff86102"
+source = "git+https://github.com/vireshk/vhost-user-master#adfd713573d132965949797569344d20bc9c24e4"
 dependencies = [
  "epoll",
  "libc",
