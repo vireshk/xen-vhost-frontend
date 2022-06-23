@@ -314,7 +314,7 @@ pub fn handle_events(
 fn activate_device(
     dev: Arc<RwLock<Generic>>,
     state: Arc<RwLock<XenState>>,
-    interrupt_cb: Arc<dyn VirtioInterrupt>,
+    interrupt: Arc<dyn VirtioInterrupt>,
 ) {
     // Wait for virtqueues to initialize
     let ready = state.write().unwrap().mmio.ready();
@@ -330,7 +330,7 @@ fn activate_device(
 
     dev.write()
         .unwrap()
-        .activate(mem, interrupt_cb, queues, kick)
+        .activate(mem, interrupt, queues, kick)
         .unwrap();
 }
 
