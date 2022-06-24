@@ -341,12 +341,17 @@ fn main() {
     ));
     let interrupt = Arc::new(XenVirtioInterrupt::new(state.clone()));
 
-    let mut handles = vec![handle_events(state.clone(), dev.clone()).unwrap()];
-    handles.push(handle_interrupt(interrupt.clone()));
+    let guest_handle = handle_events(state.clone(), dev.clone()).unwrap();
+
+    let exit = EventFd::new(0).unwrap();
+    let device_handle = handle_interrupt(interrupt.clone(), exit.try_clone().unwrap());
 
     activate_device(dev, state, interrupt);
 
-    for handle in handles {
-        handle.join().unwrap();
-    }
+    // Wait for guest to exit
+    guest_handle.join().unwrap();
+
+    // Exit the interrupt handler thread and wait for it to exit
+    exit.write(1).unwrap();
+    device_handle.join().unwrap();
 }
