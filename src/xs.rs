@@ -15,14 +15,14 @@ use super::{Error, Result};
 use libxen_sys::{
     domid_t, strlen, xenbus_state_XenbusStateInitWait, xenbus_state_XenbusStateInitialising,
     xenbus_state_XenbusStateUnknown, xs_close, xs_directory, xs_fileno, xs_handle, xs_open,
-    xs_read, xs_read_watch, xs_transaction_t, xs_unwatch, xs_watch, xs_watch_type,
-    xs_watch_type_XS_WATCH_PATH, xs_write, XenbusState, XBT_NULL,
+    xs_read, xs_read_watch, xs_transaction_t, xs_watch, xs_watch_type, xs_watch_type_XS_WATCH_PATH,
+    xs_write, XenbusState, XBT_NULL,
 };
 
 struct XsWatch {
-    xsh: *mut xs_handle,
-    path: CString,
-    token: CString,
+    _xsh: *mut xs_handle,
+    _path: CString,
+    _token: CString,
 }
 
 impl XsWatch {
@@ -34,18 +34,23 @@ impl XsWatch {
         }
 
         Ok(Self {
-            xsh: dev.xsh(),
-            path,
-            token,
+            _xsh: dev.xsh(),
+            _path: path,
+            _token: token,
         })
     }
 }
 
 impl Drop for XsWatch {
     fn drop(&mut self) {
-        unsafe {
-            xs_unwatch(self.xsh, self.path.as_ptr(), self.token.as_ptr());
-        }
+        // FIXME
+        //
+        // If the guest goes away first, this just hangs and the xen-vhost-master daemon never
+        // exits. Comment out the code for now.
+        //
+        // unsafe {
+        //     xs_unwatch(self.xsh, self.path.as_ptr(), self.token.as_ptr());
+        // }
     }
 }
 
