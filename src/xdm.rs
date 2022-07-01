@@ -53,16 +53,13 @@ impl XenDeviceModel {
     }
 
     fn destroy_ioreq_server(&mut self) -> Result<()> {
-        if self.id.is_none() {
-            return Ok(());
+        if let Some(_) = self.id.take() {
+            self.xdmh
+                .destroy_ioreq_server(self.domid, self.ioserver_id())
+                .map_err(Error::XenIoctlError)
+        } else {
+            Ok(())
         }
-
-        self.xdmh
-            .destroy_ioreq_server(self.domid, self.ioserver_id())
-            .map_err(Error::XenIoctlError)?;
-
-        self.id = None;
-        Ok(())
     }
 
     pub fn set_ioreq_server_state(&self, enabled: i32) -> Result<()> {
@@ -84,13 +81,12 @@ impl XenDeviceModel {
 
     fn ummap_io_range_from_ioreq_server(&self) -> Result<()> {
         if let Some((start, end)) = self.map_range {
-            return self
-                .xdmh
+            self.xdmh
                 .unmap_io_range_from_ioreq_server(self.domid, self.ioserver_id(), 1, start, end)
-                .map_err(Error::XenIoctlError);
+                .map_err(Error::XenIoctlError)
+        } else {
+            Ok(())
         }
-
-        Ok(())
     }
 
     pub fn set_irq(&self, irq: u32) -> Result<()> {
