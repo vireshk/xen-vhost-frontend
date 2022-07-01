@@ -56,8 +56,6 @@ pub enum Error {
     InvalidFeatureSel(u32),
     #[error("Invalid MMIO direction {0:}")]
     InvalidMmioDir(u8),
-    #[error("Xen device model failure")]
-    XenDeviceModelFailure,
     #[error("Xen foreign memory failure")]
     XenForeignMemoryFailure,
     #[error("Xen foreign memory failure: {0:?}")]
