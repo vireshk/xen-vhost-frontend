@@ -53,9 +53,9 @@ impl XenDeviceModel {
     }
 
     fn destroy_ioreq_server(&mut self) -> Result<()> {
-        if let Some(_) = self.id.take() {
+        if let Some(id) = self.id.take() {
             self.xdmh
-                .destroy_ioreq_server(self.domid, self.ioserver_id())
+                .destroy_ioreq_server(self.domid, id)
                 .map_err(Error::XenIoctlError)
         } else {
             Ok(())
