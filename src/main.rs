@@ -104,15 +104,17 @@ struct DeviceArgs {
     name: String,
 }
 
-fn create_device() -> Result<Generic> {
+fn parse_args() -> VhostUserConfig {
     let args = DeviceArgs::parse();
     let device_type = VirtioDeviceType::from(args.name.as_str());
 
-    let vu_cfg = VhostUserConfig {
+    VhostUserConfig {
         device_type,
         socket: args.socket_path,
-    };
+    }
+}
 
+fn create_device(vu_cfg: VhostUserConfig) -> Result<Generic> {
     let dev = Generic::new(
         vu_cfg,
         SeccompAction::Allow,
@@ -333,23 +335,30 @@ fn activate_device(
 }
 
 fn main() {
-    let dev = Arc::new(RwLock::new(create_device().unwrap()));
-    let state = Arc::new(RwLock::new(
-        XenState::new(dev.write().as_ref().unwrap()).unwrap(),
-    ));
-    let interrupt = Arc::new(XenVirtioInterrupt::new(state.clone()));
+    let vu_cfg = parse_args();
 
-    let guest_handle = handle_events(state.clone(), dev.clone()).unwrap();
+    loop {
+        let dev = Arc::new(RwLock::new(create_device(vu_cfg.clone()).unwrap()));
 
-    let exit = EventFd::new(0).unwrap();
-    let device_handle = handle_interrupt(interrupt.clone(), exit.try_clone().unwrap());
+        println!("Waiting for guest to start!");
 
-    activate_device(dev, state, interrupt);
+        let state = Arc::new(RwLock::new(
+            XenState::new(dev.write().as_ref().unwrap()).unwrap(),
+        ));
+        let interrupt = Arc::new(XenVirtioInterrupt::new(state.clone()));
 
-    // Wait for guest to exit
-    guest_handle.join().unwrap();
+        let guest_handle = handle_events(state.clone(), dev.clone()).unwrap();
 
-    // Exit the interrupt handler thread and wait for it to exit
-    exit.write(1).unwrap();
-    device_handle.join().unwrap();
+        let exit = EventFd::new(0).unwrap();
+        let device_handle = handle_interrupt(interrupt.clone(), exit.try_clone().unwrap());
+
+        activate_device(dev, state, interrupt);
+
+        // Wait for guest to exit
+        guest_handle.join().unwrap();
+
+        // Exit the interrupt handler thread and wait for it to exit
+        exit.write(1).unwrap();
+        device_handle.join().unwrap();
+    }
 }
