@@ -23,8 +23,10 @@ pub const GUEST_RAM1_BASE: u64 = 0x0200000000;
 fn get_dom_mem(domid: domid_t) -> Result<u64> {
     let info = xc_domain_info(domid, 1);
 
-    if info.len() != 1 || info[0].domid != domid {
-        Err(Error::InvalidDomainInfo(info.len(), domid, info.len()))
+    if info.len() != 1 {
+        Err(Error::InvalidDomainInfo(info.len(), domid, 0))
+    } else if info[0].domid != domid {
+        Err(Error::InvalidDomainInfo(info.len(), domid, info[0].domid as usize))
     } else {
         Ok((info[0].nr_pages - 4) << XC_PAGE_SHIFT)
     }
