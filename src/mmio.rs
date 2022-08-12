@@ -4,12 +4,12 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use vhost::vhost_user::message::VHOST_USER_CONFIG_OFFSET;
-use vhost_user_master::{Generic, GuestMemoryMmap, VirtioDevice};
-use virtio_queue::{Queue, QueueState};
-use vm_memory::{ByteValued, GuestMemoryAtomic};
+use vhost_user_master::{Generic, VirtioDevice};
+use virtio_queue::{Queue, QueueT};
+use vm_memory::ByteValued;
 use vmm_sys_util::eventfd::{EventFd, EFD_NONBLOCK};
 
-use super::{xdm::XenDeviceModel, xgm::XenGuestMem, Error, Result};
+use super::{xdm::XenDeviceModel, Error, Result};
 use libxen_sys::{
     ioreq, IOREQ_READ, IOREQ_TYPE_COPY, IOREQ_TYPE_INVALIDATE, IOREQ_WRITE, VIRTIO_F_VERSION_1,
     VIRTIO_MMIO_CONFIG_GENERATION, VIRTIO_MMIO_DEVICE_FEATURES, VIRTIO_MMIO_DEVICE_FEATURES_SEL,
@@ -34,7 +34,7 @@ struct VirtQueue {
     avail_hi: u32,
     used_lo: u32,
     used_hi: u32,
-    queue: Option<Queue<GuestMemoryAtomic<GuestMemoryMmap>>>,
+    queue: Option<Queue>,
 
     // Guest to device
     kick: EventFd,
@@ -99,21 +99,11 @@ impl XenMmio {
         self.ready.try_clone().unwrap()
     }
 
-    pub fn get_kick(&self) -> Vec<EventFd> {
-        let mut events = Vec::new();
-
-        for vq in &self.vq {
-            events.push(vq.kick.try_clone().unwrap());
-        }
-
-        events
-    }
-
-    pub fn queues(&self) -> Vec<Queue<GuestMemoryAtomic<GuestMemoryMmap>>> {
+    pub fn queues(&mut self) -> Vec<(usize, Queue, EventFd)> {
         let mut queues = Vec::new();
 
-        for vq in &self.vq {
-            queues.push(vq.queue.as_ref().unwrap().clone());
+        for (i, vq) in self.vq.iter_mut().enumerate() {
+            queues.push((i, vq.queue.take().unwrap(), vq.kick.try_clone().unwrap()));
         }
 
         queues
@@ -181,13 +171,7 @@ impl XenMmio {
         Ok(())
     }
 
-    fn handle_io_write(
-        &mut self,
-        ioreq: &ioreq,
-        dev: &mut Generic,
-        gm: &XenGuestMem,
-        offset: u64,
-    ) -> Result<()> {
+    fn handle_io_write(&mut self, ioreq: &ioreq, dev: &mut Generic, offset: u64) -> Result<()> {
         let vq = &mut self.vq[self.queue_sel as usize];
         match offset as u32 {
             VIRTIO_MMIO_DEVICE_FEATURES_SEL => self.device_features_sel = ioreq.data as u32,
@@ -222,7 +206,7 @@ impl XenMmio {
             VIRTIO_MMIO_QUEUE_READY => {
                 self.vq[self.queue_sel as usize].ready = ioreq.data as u32;
                 if self.vq[self.queue_sel as usize].ready == 1 {
-                    self.init_vq(gm);
+                    self.init_vq();
                 }
             }
             VIRTIO_MMIO_QUEUE_NOTIFY => self.kick(ioreq.data)?,
@@ -233,7 +217,7 @@ impl XenMmio {
         Ok(())
     }
 
-    fn init_vq(&mut self, gm: &XenGuestMem) {
+    fn init_vq(&mut self) {
         let vq = &mut self.vq[self.queue_sel as usize];
 
         let desc = ((vq.desc_hi as u64) << 32) | vq.desc_lo as u64;
@@ -244,8 +228,7 @@ impl XenMmio {
             panic!();
         }
 
-        let mut queue =
-            Queue::<GuestMemoryAtomic<GuestMemoryMmap>, QueueState>::new(gm.mem(), vq.size as u16);
+        let mut queue = Queue::new(vq.size as u16).unwrap();
         queue.set_desc_table_address(Some((desc & 0xFFFFFFFF) as u32), Some((desc >> 32) as u32));
         queue.set_avail_ring_address(
             Some((avail & 0xFFFFFFFF) as u32),
@@ -266,12 +249,7 @@ impl XenMmio {
         self.ready.write(1).unwrap();
     }
 
-    pub fn handle_ioreq(
-        &mut self,
-        ioreq: &mut ioreq,
-        dev: &mut Generic,
-        gm: &XenGuestMem,
-    ) -> Result<()> {
+    pub fn handle_ioreq(&mut self, ioreq: &mut ioreq, dev: &mut Generic) -> Result<()> {
         match ioreq.type_ as u32 {
             IOREQ_TYPE_COPY => {
                 let mut offset = ioreq.addr - self.addr;
@@ -287,7 +265,7 @@ impl XenMmio {
                 } else {
                     match ioreq.dir() as u32 {
                         IOREQ_READ => self.handle_io_read(ioreq, dev, offset)?,
-                        IOREQ_WRITE => self.handle_io_write(ioreq, dev, gm, offset)?,
+                        IOREQ_WRITE => self.handle_io_write(ioreq, dev, offset)?,
                         _ => return Err(Error::InvalidMmioDir(ioreq.dir())),
                     }
                 }

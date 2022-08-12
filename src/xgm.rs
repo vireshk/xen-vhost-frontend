@@ -7,14 +7,17 @@ use libc::{MAP_SHARED, PROT_READ, PROT_WRITE};
 use std::fs::OpenOptions;
 use std::os::raw::c_void;
 
-use vhost_user_master::{GuestMemoryMmap, GuestRegionMmap, MmapRegionBuilder};
-use vm_memory::guest_memory::FileOffset;
-use vm_memory::mmap::NewBitmap;
-use vm_memory::{GuestAddress, GuestMemoryAtomic};
+use vhost_user_master::{GuestMemoryMmap, GuestRegionMmap};
+use vm_memory::{
+    bitmap::AtomicBitmap, guest_memory::FileOffset, mmap::NewBitmap, GuestAddress,
+    GuestMemoryAtomic,
+};
 
 use super::{xfm::XenForeignMemory, Error, Result};
 use libxen_sys::{domid_t, GUEST_RAM_BANKS, XC_PAGE_SHIFT};
 use xen_ioctls::xc_domain_info;
+
+type MmapRegionBuilder = vm_memory::mmap::MmapRegionBuilder<AtomicBitmap>;
 
 pub const GUEST_RAM0_BASE: u64 = 0x40000000; // 3GB of low RAM @ 1GB
 pub const GUEST_RAM0_SIZE: u64 = 0xc0000000;
@@ -26,7 +29,11 @@ fn get_dom_mem(domid: domid_t) -> Result<u64> {
     if info.len() != 1 {
         Err(Error::InvalidDomainInfo(info.len(), domid, 0))
     } else if info[0].domid != domid {
-        Err(Error::InvalidDomainInfo(info.len(), domid, info[0].domid as usize))
+        Err(Error::InvalidDomainInfo(
+            info.len(),
+            domid,
+            info[0].domid as usize,
+        ))
     } else {
         Ok((info[0].nr_pages - 4) << XC_PAGE_SHIFT)
     }

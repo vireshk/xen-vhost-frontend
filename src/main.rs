@@ -104,21 +104,22 @@ struct DeviceArgs {
     name: String,
 }
 
-fn parse_args() -> VhostUserConfig {
+fn create_device() -> Result<Generic> {
     let args = DeviceArgs::parse();
     let device_type = VirtioDeviceType::from(args.name.as_str());
+    let (num, size) = device_type.queue_num_and_size();
 
-    VhostUserConfig {
-        device_type,
+    let vu_cfg = VhostUserConfig {
         socket: args.socket_path,
-    }
-}
+        num_queues: num,
+        queue_size: size as u16,
+    };
 
-fn create_device(vu_cfg: VhostUserConfig) -> Result<Generic> {
     let dev = Generic::new(
         vu_cfg,
         SeccompAction::Allow,
         EventFd::new(EFD_NONBLOCK).unwrap(),
+        device_type,
     )
     .map_err(Error::VhostMasterError)?;
 
@@ -209,8 +210,7 @@ impl XenState {
 
         ioreq.set_state(STATE_IOREQ_INPROCESS as u8);
 
-        self.mmio
-            .handle_ioreq(ioreq, &mut dev.write().unwrap(), &self.xgm)?;
+        self.mmio.handle_ioreq(ioreq, &mut dev.write().unwrap())?;
 
         // Memory barrier
         fence(Ordering::SeqCst);
@@ -320,9 +320,8 @@ fn activate_device(
     let ready = state.write().unwrap().mmio.ready();
     while ready.read().is_err() {}
 
-    let state = state.write().unwrap();
+    let mut state = state.write().unwrap();
     let mem = state.xgm.mem();
-    let kick = state.mmio.get_kick();
     let queues = state.mmio.queues();
 
     // Drop the lock before activating the device.
@@ -330,15 +329,13 @@ fn activate_device(
 
     dev.write()
         .unwrap()
-        .activate(mem, interrupt, queues, kick)
+        .activate(mem, interrupt, queues)
         .unwrap();
 }
 
 fn main() {
-    let vu_cfg = parse_args();
-
     loop {
-        let dev = Arc::new(RwLock::new(create_device(vu_cfg.clone()).unwrap()));
+        let dev = Arc::new(RwLock::new(create_device().unwrap()));
 
         println!("Waiting for guest to start!");
 
