@@ -23,3 +23,4 @@ virtio-queue = "0.5"
 vm-memory = { version = ">=0.8.0", features = ["backend-mmap", "backend-atomic", "backend-bitmap"] }
 vmm-sys-util = "=0.10.0"
 xen-ioctls = { git = "https://gitlab.com/mathieupoirier/oxerun/", branch = "xen-ioctls" }
+xen-store = { git = "https://gitlab.com/mathieupoirier/oxerun/", branch = "xen-ioctls" }

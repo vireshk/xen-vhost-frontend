@@ -3,204 +3,34 @@
 //
 // SPDX-License-Identifier: Apache-2.0
 
-use libc::free;
-use std::ffi::{CStr, CString};
 use std::io;
-use std::os::raw::{c_char, c_void};
-use std::{slice, str, thread, time};
+use std::{str, thread, time};
 
 use vmm_sys_util::epoll::{ControlOperation, Epoll, EpollEvent, EventSet};
 
 use super::{Error, Result};
-use libxen_sys::{
-    domid_t, strlen, xenbus_state_XenbusStateInitWait, xenbus_state_XenbusStateInitialising,
-    xenbus_state_XenbusStateUnknown, xs_close, xs_directory, xs_fileno, xs_handle, xs_open,
-    xs_read, xs_read_watch, xs_transaction_t, xs_watch, xs_watch_type, xs_watch_type_XS_WATCH_PATH,
-    xs_write, XenbusState, XBT_NULL,
+use xen_store::{
+    XenStoreHandle, XBT_NULL, XENBUS_STATE_INITIALISING, XENBUS_STATE_INITWAIT,
+    XENBUS_STATE_UNKNOWN, XEN_WATCH_TYPE_WATCH_PATH,
 };
 
-struct XsWatch {
-    _xsh: *mut xs_handle,
-    _path: CString,
-    _token: CString,
-}
-
-impl XsWatch {
-    fn new(dev: &XsDev, path: CString, token: CString) -> Result<Self> {
-        let ret = unsafe { xs_watch(dev.xsh(), path.as_ptr(), token.as_ptr()) };
-
-        if !ret {
-            return Err(Error::XsWatchFailed);
-        }
-
-        Ok(Self {
-            _xsh: dev.xsh(),
-            _path: path,
-            _token: token,
-        })
-    }
-}
-
-impl Drop for XsWatch {
-    fn drop(&mut self) {
-        // FIXME
-        //
-        // If the guest goes away first, this just hangs and the xen-vhost-master daemon never
-        // exits. Comment out the code for now.
-        //
-        // unsafe {
-        //     xs_unwatch(self.xsh, self.path.as_ptr(), self.token.as_ptr());
-        // }
-    }
-}
-
-pub struct XsReadWatch {
-    buf: *mut *mut c_char,
-    num: u32,
-}
-
-impl XsReadWatch {
-    pub fn new(dev: &XsDev) -> Result<Self> {
-        let mut num: u32 = 0;
-        let buf = unsafe { xs_read_watch(dev.xsh, &mut num) };
-        if buf.is_null() {
-            return Err(Error::XsError);
-        }
-
-        Ok(Self { buf, num })
-    }
-
-    pub fn buf(&self) -> *mut *mut c_char {
-        self.buf
-    }
-
-    pub fn num(&self) -> u32 {
-        self.num
-    }
-
-    pub fn data(&self, index: xs_watch_type) -> Result<&str> {
-        // SAFETY: The array is guaranteed to be valid here.
-        let vec = unsafe { slice::from_raw_parts(self.buf(), self.num() as usize) };
-
-        // SAFETY: The string is guaranteed to be valid here.
-        let path = str::from_utf8(unsafe {
-            slice::from_raw_parts(
-                vec[index as usize] as *const u8,
-                strlen(vec[index as usize] as *const u8) as usize,
-            )
-        })
-        .map_err(Error::InvalidString)?;
-
-        Ok(path)
-    }
-}
-
-impl Drop for XsReadWatch {
-    fn drop(&mut self) {
-        unsafe { free(self.buf as *mut c_void) }
-    }
-}
-
-struct XsDirectory {
-    buf: *mut *mut c_char,
-    num: u32,
-}
-
-impl XsDirectory {
-    pub fn new(dev: &XsDev, path: &CStr) -> Result<Self> {
-        let mut num: u32 = 0;
-        let buf = unsafe { xs_directory(dev.xsh, XBT_NULL, path.as_ptr(), &mut num) };
-        if buf.is_null() {
-            return Err(Error::XsDirectoryFailed);
-        }
-
-        Ok(Self { buf, num })
-    }
-
-    pub fn num(&self) -> u32 {
-        self.num
-    }
-
-    pub fn entries(&self) -> Result<Vec<i32>> {
-        let mut values = Vec::new();
-
-        // SAFETY: The string is guaranteed to be valid here.
-        let entries =
-            unsafe { slice::from_raw_parts(self.buf as *mut *mut c_char, self.num as usize) };
-
-        for entry in entries {
-            // SAFETY: The string is guaranteed to be valid here.
-            let buf = str::from_utf8(unsafe {
-                slice::from_raw_parts(*entry as *const u8, strlen(*entry as *const u8) as usize)
-            })
-            .map_err(Error::InvalidString)?;
-
-            values.push(buf.parse::<i32>().map_err(Error::ParseFailure)?);
-        }
-
-        Ok(values)
-    }
-}
-
-impl Drop for XsDirectory {
-    fn drop(&mut self) {
-        unsafe { free(self.buf as *mut c_void) }
-    }
-}
-
-struct XsRead {
-    buf: *mut c_void,
-    len: u32,
-}
-
-impl XsRead {
-    pub fn new(dev: &XsDev, transaction: xs_transaction_t, path: &CStr) -> Result<Self> {
-        let mut len: u32 = 0;
-        let buf = unsafe { xs_read(dev.xsh, transaction, path.as_ptr(), &mut len) };
-        if buf.is_null() {
-            return Err(Error::XsReadFailed);
-        }
-
-        Ok(Self { buf, len })
-    }
-
-    pub fn buf(&self) -> *mut c_void {
-        self.buf
-    }
-
-    pub fn len(&self) -> u32 {
-        self.len
-    }
-}
-
-impl Drop for XsRead {
-    fn drop(&mut self) {
-        unsafe { free(self.buf) }
-    }
-}
-
 pub struct XsDev {
-    xsh: *mut xs_handle,
-    be_domid: domid_t,
-    fe_domid: domid_t,
+    xsh: XenStoreHandle,
+    be_domid: u16,
+    fe_domid: u16,
     dev_id: i32,
     dev_name: String,
     be: String,
     fe: String,
     be_state: u32,
-    path: CString,
+    path: String,
     addr: u32,
     irq: u8,
-    be_watch: Option<XsWatch>,
-    fe_watch: Option<XsWatch>,
 }
 
 impl XsDev {
     pub fn new(dev_name: String) -> Result<Self> {
-        let xsh = unsafe { xs_open(0) };
-        if xsh.is_null() {
-            return Err(Error::XsOpenFailed);
-        }
+        let xsh = XenStoreHandle::new().map_err(Error::XenIoctlError)?;
 
         Ok(Self {
             xsh,
@@ -211,23 +41,17 @@ impl XsDev {
             be: "".to_string(),
             fe: "".to_string(),
             be_state: 0,
-            path: CString::new(format!("backend/{}", dev_name)).unwrap(),
+            path: format!("backend/{}", dev_name),
             addr: 0,
             irq: 0,
-            be_watch: None,
-            fe_watch: None,
         })
     }
 
-    pub fn xsh(&self) -> *mut xs_handle {
-        self.xsh
-    }
-
-    pub fn be_domid(&self) -> domid_t {
+    pub fn be_domid(&self) -> u16 {
         self.be_domid
     }
 
-    pub fn fe_domid(&self) -> domid_t {
+    pub fn fe_domid(&self) -> u16 {
         self.fe_domid
     }
 
@@ -247,42 +71,18 @@ impl XsDev {
         &self.fe
     }
 
-    pub fn read_str_raw(&self, transaction: xs_transaction_t, path: &CStr) -> Result<String> {
-        let read = XsRead::new(self, transaction, path)?;
-
-        // SAFETY: The string is guaranteed to be valid here.
-        let val = str::from_utf8(unsafe {
-            slice::from_raw_parts(read.buf() as *const u8, read.len() as usize)
-        })
-        .map_err(Error::InvalidString)?;
-
-        let val = val.to_string();
-
-        Ok(val)
+    pub fn read_str_raw(&self, _transaction: u32, path: &str) -> Result<String> {
+        self.xsh.read_str(path).map_err(Error::XenIoctlError)
     }
 
     pub fn read_str(&self, base: &str, node: &str) -> Result<String> {
-        let path = CString::new(format!("{}/{}", base, node)).unwrap();
-
-        self.read_str_raw(0, &path)
+        self.read_str_raw(0, format!("{}/{}", base, node).as_str())
     }
 
     pub fn write_str(&self, base: &str, node: &str, val: &str) -> Result<()> {
-        let path = CString::new(format!("{}/{}", base, node)).unwrap();
-        let val = CString::new(val).unwrap();
-
-        match unsafe {
-            xs_write(
-                self.xsh,
-                0,
-                path.as_ptr(),
-                val.as_ptr() as *const c_void,
-                strlen(val.as_ptr()) as u32,
-            )
-        } {
-            true => Ok(()),
-            false => Err(Error::XsError),
-        }
+        self.xsh
+            .write_str(format!("{}/{}", base, node).as_str(), val)
+            .map_err(|_| Error::XsError)
     }
 
     pub fn read_be_str(&self, node: &str) -> Result<String> {
@@ -312,23 +112,18 @@ impl XsDev {
         self.write_int(&self.be, node, val)
     }
 
-    pub fn set_be_state(&mut self, state: XenbusState) -> Result<()> {
+    pub fn set_be_state(&mut self, state: u32) -> Result<()> {
         self.write_be_int("state", state)?;
         self.be_state = state;
         Ok(())
     }
 
     pub fn fileno(&self) -> Result<i32> {
-        let fd = unsafe { xs_fileno(self.xsh) };
-        if fd < 0 {
-            Err(Error::FileOpenFailed)
-        } else {
-            Ok(fd)
-        }
+        self.xsh.fileno().map_err(|_| Error::FileOpenFailed)
     }
 
-    pub fn wait_be_state(&self, state: XenbusState) -> Result<u32> {
-        let state = state | 1 << xenbus_state_XenbusStateUnknown;
+    pub fn wait_be_state(&self, state: u32) -> Result<u32> {
+        let state = state | 1 << XENBUS_STATE_UNKNOWN;
 
         loop {
             let val = self.read_be_int("state")?;
@@ -337,32 +132,31 @@ impl XsDev {
                 return Ok(val);
             }
 
-            XsReadWatch::new(self)?;
+            let _ = self.read_watch(0).map_err(|_| Error::XsReadFailed);
         }
     }
 
     pub fn get_be_domid(&mut self) -> Result<()> {
-        let name = CString::new("domid").unwrap();
-
-        let id = self.read_str_raw(XBT_NULL, &name)?;
+        let id = self.read_str_raw(XBT_NULL, "domid")?;
         self.be_domid = id.parse::<u16>().map_err(Error::ParseFailure)?;
 
         Ok(())
     }
 
     fn update_fe_domid(&mut self) -> Result<()> {
-        let watch = XsReadWatch::new(self)?;
-        if !self
-            .path
-            .eq(&CString::new(watch.data(xs_watch_type_XS_WATCH_PATH)?).unwrap())
-        {
+        let name = self.read_watch(XEN_WATCH_TYPE_WATCH_PATH as usize)?;
+        if !self.path.eq(&name) {
             return Err(Error::XsError);
         }
 
-        let directory = XsDirectory::new(self, &self.path)?;
-        let values = directory.entries()?;
+        let directory = match self.xsh.directory(&self.path) {
+            Ok(directory) => directory,
+            Err(_) => {
+                return Err(Error::XsDirectoryFailed);
+            }
+        };
 
-        for id in values {
+        for id in directory {
             if id as u16 > self.fe_domid {
                 self.fe_domid = id as u16;
             }
@@ -377,24 +171,29 @@ impl XsDev {
         // guarantee that.
         thread::sleep(time::Duration::from_millis(200));
 
-        let path = CString::new(format!("backend/{}/{}", self.dev_name, self.fe_domid)).unwrap();
+        let path = format!("backend/{}/{}", self.dev_name, self.fe_domid);
+        let directory = match self.xsh.directory(path.as_str()) {
+            Ok(directory) => directory,
+            Err(_) => return Err(Error::XsDirectoryFailed),
+        };
 
-        let directory = XsDirectory::new(self, &path)?;
-        if directory.num() > 1 {
+        if directory.len() > 1 {
             println!(
                 "got {} devices, but only single device is supported\n",
-                directory.num(),
+                directory.len(),
             );
         }
 
-        self.dev_id = directory.entries()?[0];
+        self.dev_id = directory[0];
 
-        let path = CString::new(format!(
-            "/local/domain/{}/device/{}/{}",
-            self.fe_domid, self.dev_name, self.dev_id,
-        ))
-        .unwrap();
-        match self.read_str_raw(XBT_NULL, &path) {
+        match self.read_str_raw(
+            XBT_NULL,
+            format!(
+                "/local/domain/{}/device/{}/{}",
+                self.fe_domid, self.dev_name, self.dev_id,
+            )
+            .as_str(),
+        ) {
             Ok(_) => Ok(()),
             Err(e) => {
                 self.dev_id = 0;
@@ -404,7 +203,7 @@ impl XsDev {
     }
 
     pub fn get_fe_domid(&mut self) -> Result<()> {
-        let _watch = XsWatch::new(self, self.path.clone(), self.path.clone())?;
+        self.create_watch(self.path.clone(), self.path.clone())?;
 
         loop {
             let fd = self.fileno()?;
@@ -447,6 +246,16 @@ impl XsDev {
         }
     }
 
+    pub fn create_watch(&mut self, path: String, token: String) -> Result<()> {
+        self.xsh
+            .create_watch(path.as_str(), token.as_str())
+            .map_err(|_| Error::XsWatchFailed)
+    }
+
+    pub fn read_watch(&self, index: usize) -> Result<String> {
+        self.xsh.read_watch(index).map_err(|_| Error::XsWatchFailed)
+    }
+
     pub fn connect_dom(&mut self) -> Result<()> {
         // Update be path
         self.be = format!(
@@ -455,26 +264,23 @@ impl XsDev {
         );
 
         self.be_state = self.read_be_int("state")?;
-        if self.be_state != xenbus_state_XenbusStateInitialising {
+        if self.be_state != XENBUS_STATE_INITIALISING {
             return Err(Error::XsInvalidState);
         }
 
-        self.set_be_state(xenbus_state_XenbusStateInitWait)?;
+        self.set_be_state(XENBUS_STATE_INITWAIT)?;
         self.fe = self.read_be_str("frontend")?;
 
         let state = self.read_fe_int("state")?;
-        if state != xenbus_state_XenbusStateInitialising {
+        if state != XENBUS_STATE_INITIALISING {
             return Err(Error::XsInvalidState);
         }
 
-        let be = CString::new(self.be.clone()).unwrap();
-        self.be_watch = Some(XsWatch::new(self, be.clone(), be)?);
+        self.create_watch(self.be.clone(), self.be.clone())?;
+        self.create_watch(self.fe.clone(), self.fe.clone())?;
 
-        let fe = CString::new(self.fe.clone()).unwrap();
-        self.fe_watch = Some(XsWatch::new(self, fe.clone(), fe)?);
-
-        let state = self.wait_be_state(1 << xenbus_state_XenbusStateInitWait)?;
-        if state != xenbus_state_XenbusStateInitWait {
+        let state = self.wait_be_state(1 << XENBUS_STATE_INITWAIT)?;
+        if state != XENBUS_STATE_INITWAIT {
             return Err(Error::XsInvalidState);
         }
 
@@ -482,11 +288,5 @@ impl XsDev {
         self.irq = self.read_be_int("irq")? as u8;
 
         Ok(())
-    }
-}
-
-impl Drop for XsDev {
-    fn drop(&mut self) {
-        unsafe { xs_close(self.xsh) }
     }
 }
