@@ -166,6 +166,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "nix"
+version = "0.24.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "195cdbc1741b8134346d515b3a56a1c94b0912758009cfd53f99ea0f57b065fc"
+dependencies = [
+ "bitflags",
+ "cfg-if",
+ "libc",
+ "memoffset",
+]
+
+[[package]]
 name = "once_cell"
 version = "1.13.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -437,9 +449,19 @@ checksum = "712e227841d057c1ee1cd2fb22fa7e5a5461ae8e48fa2ca79ec42cfc1931183f"
 [[package]]
 name = "xen-ioctls"
 version = "0.0.0-pre1"
-source = "git+https://gitlab.com/mathieupoirier/oxerun/?branch=xen-ioctls#2774d5ad0ac9a2dfca768df761f80679d2ddd3e7"
+source = "git+https://gitlab.com/mathieupoirier/oxerun/?branch=xen-ioctls#3ea1fc6e67486460976d90705c97422fd0533e2c"
 dependencies = [
  "libc",
+ "vmm-sys-util",
+]
+
+[[package]]
+name = "xen-store"
+version = "0.0.0-pre1"
+source = "git+https://gitlab.com/mathieupoirier/oxerun/?branch=xen-ioctls#3ea1fc6e67486460976d90705c97422fd0533e2c"
+dependencies = [
+ "libc",
+ "nix",
  "vmm-sys-util",
 ]
 
@@ -460,4 +482,5 @@ dependencies = [
  "vm-memory",
  "vmm-sys-util",
  "xen-ioctls",
+ "xen-store",
 ]

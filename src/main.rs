@@ -14,6 +14,7 @@ mod xs;
 use clap::Parser;
 use seccompiler::SeccompAction;
 use std::{
+    convert::TryInto,
     io,
     num::ParseIntError,
     str,
@@ -38,7 +39,7 @@ use xdm::XenDeviceModel;
 use xec::XenEventChannel;
 use xfm::XenForeignMemory;
 use xgm::XenGuestMem;
-use xs::{XsDev, XsReadWatch};
+use xs::XsDev;
 
 /// Result for xen-vhost-master operations
 pub type Result<T> = std::result::Result<T, Error>;
@@ -226,12 +227,19 @@ impl XenState {
     }
 
     fn handle_xen_store_event(&mut self) -> Result<()> {
-        let watch = XsReadWatch::new(&self.xsd)?;
-        let name = watch.data(xs_watch_type_XS_WATCH_TOKEN)?;
+        let name = match self
+            .xsd
+            .read_watch(xs_watch_type_XS_WATCH_TOKEN.try_into().unwrap())
+        {
+            Ok(watch) => watch,
+            Err(_) => {
+                return Err(Error::XsWatchFailed);
+            }
+        };
 
-        if self.xsd.be().eq(name) {
+        if self.xsd.be().eq(&name) {
             self.handle_be_state_change()
-        } else if self.xsd.fe().eq(name) {
+        } else if self.xsd.fe().eq(&name) {
             self.handle_fe_state_change()
         } else {
             Ok(())
