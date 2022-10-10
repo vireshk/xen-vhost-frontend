@@ -9,11 +9,11 @@ use std::{str, thread, time};
 use vmm_sys_util::epoll::{ControlOperation, Epoll, EpollEvent, EventSet};
 use xen_store::XenStoreHandle;
 
-use super::{Error, Result};
+use super::{Error, Result, XS_WATCH_TYPE_XS_WATCH_PATH};
 
 use libxen_sys::{
     xenbus_state_XenbusStateInitWait, xenbus_state_XenbusStateInitialising,
-    xenbus_state_XenbusStateUnknown, xs_watch_type_XS_WATCH_PATH,
+    xenbus_state_XenbusStateUnknown,
 };
 
 pub struct XsDev {
@@ -147,7 +147,7 @@ impl XsDev {
     }
 
     fn update_fe_domid(&mut self) -> Result<()> {
-        let name = self.read_watch(xs_watch_type_XS_WATCH_PATH as usize)?;
+        let name = self.read_watch(XS_WATCH_TYPE_XS_WATCH_PATH as usize)?;
         if !self.path.eq(&name) {
             return Err(Error::XsError);
         }
