@@ -142,7 +142,7 @@ checksum = "04c3b4822ccebfa39c02fc03d1534441b22ead323fa0f48bb7ddd8e6ba076a40"
 [[package]]
 name = "libxen-sys"
 version = "0.1.0"
-source = "git+https://github.com/vireshk/libxen-sys#4517d292fef3ef16697795fe67769477a11990cc"
+source = "git+https://github.com/vireshk/libxen-sys#26cb31bc6320a6912e90690bf270c0453f574551"
 dependencies = [
  "cc",
 ]
