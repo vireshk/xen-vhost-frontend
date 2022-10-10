@@ -14,7 +14,7 @@ use vm_memory::{
 };
 
 use super::{xfm::XenForeignMemory, Error, Result};
-use libxen_sys::{domid_t, GUEST_RAM_BANKS, XC_PAGE_SHIFT};
+use libxen_sys::{GUEST_RAM_BANKS, XC_PAGE_SHIFT};
 use xen_ioctls::xc_domain_info;
 
 type MmapRegionBuilder = vm_memory::mmap::MmapRegionBuilder<AtomicBitmap>;
@@ -23,7 +23,7 @@ pub const GUEST_RAM0_BASE: u64 = 0x40000000; // 3GB of low RAM @ 1GB
 pub const GUEST_RAM0_SIZE: u64 = 0xc0000000;
 pub const GUEST_RAM1_BASE: u64 = 0x0200000000;
 
-fn get_dom_mem(domid: domid_t) -> Result<u64> {
+fn get_dom_mem(domid: u16) -> Result<u64> {
     let info = xc_domain_info(domid, 1);
 
     if info.len() != 1 {
@@ -47,7 +47,7 @@ pub struct XenGuestMem {
 }
 
 impl XenGuestMem {
-    pub fn new(xfm: &mut XenForeignMemory, domid: domid_t) -> Result<Self> {
+    pub fn new(xfm: &mut XenForeignMemory, domid: u16) -> Result<Self> {
         let size = get_dom_mem(domid)?;
         let mut mem = XenGuestMem {
             base: [0; GUEST_RAM_BANKS as usize],

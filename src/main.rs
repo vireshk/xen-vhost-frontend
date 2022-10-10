@@ -30,7 +30,7 @@ use vmm_sys_util::eventfd::{EventFd, EFD_NONBLOCK};
 
 use interrupt::{handle_interrupt, XenVirtioInterrupt};
 use libxen_sys::{
-    domid_t, xenbus_state_XenbusStateInitialising, xenbus_state_XenbusStateUnknown,
+    xenbus_state_XenbusStateInitialising, xenbus_state_XenbusStateUnknown,
     xs_watch_type_XS_WATCH_TOKEN, STATE_IOREQ_INPROCESS, STATE_IOREQ_READY, STATE_IORESP_READY,
 };
 use mmio::XenMmio;
@@ -47,7 +47,7 @@ pub type Result<T> = std::result::Result<T, Error>;
 #[derive(Debug, ThisError)]
 pub enum Error {
     #[error("Invalid Domain info, len {0:?}, domid expected {1:?} info length {2:?}")]
-    InvalidDomainInfo(usize, domid_t, usize),
+    InvalidDomainInfo(usize, u16, usize),
     #[error("Invalid MMIO {0:} Address {1:?}")]
     InvalidMmioAddr(&'static str, u64),
     #[error("MMIO Legacy not supported by Guest")]

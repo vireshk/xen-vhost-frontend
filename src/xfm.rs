@@ -10,8 +10,7 @@ use std::slice;
 
 use super::{Error, Result};
 use libxen_sys::{
-    domid_t, ioreq, ioservid_t, shared_iopage, xen_pfn_t, XENMEM_resource_ioreq_server,
-    XC_PAGE_SHIFT,
+    ioreq, ioservid_t, shared_iopage, xen_pfn_t, XENMEM_resource_ioreq_server, XC_PAGE_SHIFT,
 };
 use xen_ioctls::{
     xenforeignmemory_map, xenforeignmemory_map_resource, xenforeignmemory_unmap,
@@ -33,7 +32,7 @@ impl XenForeignMemory {
         })
     }
 
-    pub fn map_resource(&mut self, domid: domid_t, id: ioservid_t) -> Result<()> {
+    pub fn map_resource(&mut self, domid: u16, id: ioservid_t) -> Result<()> {
         let paddr = ptr::null_mut::<c_void>();
         let resource_handle = xenforeignmemory_map_resource(
             domid,
@@ -72,7 +71,7 @@ impl XenForeignMemory {
         Ok(unsafe { &mut slice::from_raw_parts_mut(ioreq, 1)[0] })
     }
 
-    pub fn map_mem(&mut self, domid: domid_t, paddr: u64, size: u64) -> Result<*mut c_void> {
+    pub fn map_mem(&mut self, domid: u16, paddr: u64, size: u64) -> Result<*mut c_void> {
         let base = paddr >> XC_PAGE_SHIFT;
         let mut num = size >> XC_PAGE_SHIFT;
         if num << XC_PAGE_SHIFT != size {
