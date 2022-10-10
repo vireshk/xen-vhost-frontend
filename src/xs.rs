@@ -7,15 +7,14 @@ use std::io;
 use std::{str, thread, time};
 
 use vmm_sys_util::epoll::{ControlOperation, Epoll, EpollEvent, EventSet};
+use xen_store::XenStoreHandle;
 
 use super::{Error, Result};
 
 use libxen_sys::{
     xenbus_state_XenbusStateInitWait, xenbus_state_XenbusStateInitialising,
-    xenbus_state_XenbusStateUnknown, xs_watch_type_XS_WATCH_PATH, XBT_NULL,
+    xenbus_state_XenbusStateUnknown, xs_watch_type_XS_WATCH_PATH,
 };
-
-use xen_store::XenStoreHandle;
 
 pub struct XsDev {
     xsh: XenStoreHandle,
@@ -74,12 +73,12 @@ impl XsDev {
         &self.fe
     }
 
-    pub fn read_str_raw(&self, _transaction: u32, path: &str) -> Result<String> {
+    pub fn read_str_raw(&self, path: &str) -> Result<String> {
         self.xsh.read_str(path).map_err(Error::XenIoctlError)
     }
 
     pub fn read_str(&self, base: &str, node: &str) -> Result<String> {
-        self.read_str_raw(0, format!("{}/{}", base, node).as_str())
+        self.read_str_raw(format!("{}/{}", base, node).as_str())
     }
 
     pub fn write_str(&self, base: &str, node: &str, val: &str) -> Result<()> {
@@ -100,6 +99,7 @@ impl XsDev {
 
     pub fn write_int(&self, base: &str, node: &str, val: u32) -> Result<()> {
         let val_str = format!("{}", val);
+
         self.write_str(base, node, &val_str)
     }
 
@@ -135,12 +135,12 @@ impl XsDev {
                 return Ok(val);
             }
 
-            let _ = self.read_watch(0).map_err(|_| Error::XsReadFailed);
+            self.read_watch(0).map_err(|_| Error::XsReadFailed)?;
         }
     }
 
     pub fn get_be_domid(&mut self) -> Result<()> {
-        let id = self.read_str_raw(XBT_NULL, "domid")?;
+        let id = self.read_str_raw("domid")?;
         self.be_domid = id.parse::<u16>().map_err(Error::ParseFailure)?;
 
         Ok(())
@@ -152,12 +152,10 @@ impl XsDev {
             return Err(Error::XsError);
         }
 
-        let directory = match self.xsh.directory(&self.path) {
-            Ok(directory) => directory,
-            Err(_) => {
-                return Err(Error::XsDirectoryFailed);
-            }
-        };
+        let directory = self
+            .xsh
+            .directory(&self.path)
+            .map_err(|_| Error::XsDirectoryFailed)?;
 
         for id in directory {
             if id as u16 > self.fe_domid {
@@ -175,10 +173,10 @@ impl XsDev {
         thread::sleep(time::Duration::from_millis(200));
 
         let path = format!("backend/{}/{}", self.dev_name, self.fe_domid);
-        let directory = match self.xsh.directory(path.as_str()) {
-            Ok(directory) => directory,
-            Err(_) => return Err(Error::XsDirectoryFailed),
-        };
+        let directory = self
+            .xsh
+            .directory(path.as_str())
+            .map_err(|_| Error::XsDirectoryFailed)?;
 
         if directory.len() > 1 {
             println!(
@@ -190,7 +188,6 @@ impl XsDev {
         self.dev_id = directory[0];
 
         match self.read_str_raw(
-            XBT_NULL,
             format!(
                 "/local/domain/{}/device/{}/{}",
                 self.fe_domid, self.dev_name, self.dev_id,

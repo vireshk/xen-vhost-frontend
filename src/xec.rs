@@ -36,7 +36,7 @@ impl XenEventChannel {
 
     pub fn unbind(&self) {
         for port in &self.ports {
-            if let Err(_) = self.channel.unbind(*port) {
+            if self.channel.unbind(*port).is_err() {
                 println!("XenEventChannel: Failed to unbind port: {}", *port);
             }
         }

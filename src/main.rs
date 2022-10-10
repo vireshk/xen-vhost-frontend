@@ -14,7 +14,6 @@ mod xs;
 use clap::Parser;
 use seccompiler::SeccompAction;
 use std::{
-    convert::TryInto,
     io,
     num::ParseIntError,
     str,
@@ -227,15 +226,10 @@ impl XenState {
     }
 
     fn handle_xen_store_event(&mut self) -> Result<()> {
-        let name = match self
+        let name = self
             .xsd
-            .read_watch(xs_watch_type_XS_WATCH_TOKEN.try_into().unwrap())
-        {
-            Ok(watch) => watch,
-            Err(_) => {
-                return Err(Error::XsWatchFailed);
-            }
-        };
+            .read_watch(xs_watch_type_XS_WATCH_TOKEN as usize)
+            .map_err(|_| Error::XsWatchFailed)?;
 
         if self.xsd.be().eq(&name) {
             self.handle_be_state_change()
