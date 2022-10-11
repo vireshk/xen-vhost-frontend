@@ -360,9 +360,9 @@ dependencies = [
 ]
 
 [[package]]
-name = "vhost-user-master"
+name = "vhost-user-frontend"
 version = "0.1.0"
-source = "git+https://github.com/vireshk/vhost-user-master#cbe9bf82e78aa55dce1dba4a20bd933e7da28d8c"
+source = "git+https://github.com/vireshk/vhost-user-frontend#e59e65f8dadf8bd813cc0522933948bb00070b5c"
 dependencies = [
  "epoll",
  "libc",
@@ -477,7 +477,7 @@ dependencies = [
  "seccompiler",
  "thiserror",
  "vhost",
- "vhost-user-master",
+ "vhost-user-frontend",
  "virtio-queue",
  "vm-memory",
  "vmm-sys-util",

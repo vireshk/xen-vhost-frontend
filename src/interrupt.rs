@@ -10,7 +10,7 @@ use std::{
     thread::{spawn, JoinHandle},
 };
 
-use vhost_user_master::{VirtioInterrupt, VirtioInterruptType};
+use vhost_user_frontend::{VirtioInterrupt, VirtioInterruptType};
 use vmm_sys_util::epoll::{ControlOperation, Epoll, EpollEvent, EventSet};
 use vmm_sys_util::eventfd::EventFd;
 

@@ -4,7 +4,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use vhost::vhost_user::message::VHOST_USER_CONFIG_OFFSET;
-use vhost_user_master::{Generic, VirtioDevice};
+use vhost_user_frontend::{Generic, VirtioDevice};
 use virtio_queue::{Queue, QueueT};
 use vm_memory::ByteValued;
 use vmm_sys_util::eventfd::{EventFd, EFD_NONBLOCK};

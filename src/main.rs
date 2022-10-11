@@ -22,7 +22,7 @@ use std::{
 };
 use thiserror::Error as ThisError;
 
-use vhost_user_master::{
+use vhost_user_frontend::{
     Generic, VhostUserConfig, VirtioDevice, VirtioDeviceType, VirtioInterrupt,
 };
 use vmm_sys_util::epoll::{ControlOperation, Epoll, EpollEvent, EventSet};
@@ -60,8 +60,8 @@ pub enum Error {
     XenForeignMemoryFailure,
     #[error("Xen foreign memory failure: {0:?}")]
     XenIoctlError(io::Error),
-    #[error("Vhost user master error")]
-    VhostMasterError(vhost_user_master::Error),
+    #[error("Vhost user frontend error")]
+    VhostMasterError(vhost_user_frontend::Error),
     #[error("Failed to connect to xenstore")]
     XsOpenFailed,
     #[error("Failed to get Backend DomId")]

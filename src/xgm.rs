@@ -7,7 +7,7 @@ use libc::{MAP_SHARED, PROT_READ, PROT_WRITE};
 use std::fs::OpenOptions;
 use std::os::raw::c_void;
 
-use vhost_user_master::{GuestMemoryMmap, GuestRegionMmap};
+use vhost_user_frontend::{GuestMemoryMmap, GuestRegionMmap};
 use vm_memory::{
     bitmap::AtomicBitmap, guest_memory::FileOffset, mmap::NewBitmap, GuestAddress,
     GuestMemoryAtomic,
