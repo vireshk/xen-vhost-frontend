@@ -362,7 +362,7 @@ dependencies = [
 [[package]]
 name = "vhost-user-frontend"
 version = "0.1.0"
-source = "git+https://github.com/vireshk/vhost-user-frontend#e59e65f8dadf8bd813cc0522933948bb00070b5c"
+source = "git+https://github.com/vireshk/vhost?branch=frontend/stable#e3af09a4962313965f2518aaa975a6475e1fae3d"
 dependencies = [
  "epoll",
  "libc",
