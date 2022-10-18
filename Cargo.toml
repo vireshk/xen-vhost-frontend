@@ -18,6 +18,7 @@ log = "0.4.14"
 seccompiler = "0.2.0"
 thiserror = "1.0"
 vhost = { version = "0.4.0", features = ["vhost-user-master", "vhost-kern", "vhost-user-slave"] }
+virtio-bindings = { git = "https://github.com/rust-vmm/vm-virtio" }
 vhost-user-frontend = { git = "https://github.com/vireshk/vhost-user-frontend" }
 virtio-queue = "0.5"
 vm-memory = { version = ">=0.8.0", features = ["backend-mmap", "backend-atomic", "backend-bitmap"] }

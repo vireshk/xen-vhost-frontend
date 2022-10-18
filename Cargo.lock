@@ -370,7 +370,7 @@ dependencies = [
  "seccompiler",
  "thiserror",
  "vhost",
- "virtio-bindings",
+ "virtio-bindings 0.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "virtio-queue",
  "vm-memory",
  "vmm-sys-util",
@@ -383,13 +383,18 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3ff512178285488516ed85f15b5d0113a7cdb89e9e8a760b269ae4f02b84bd6b"
 
 [[package]]
+name = "virtio-bindings"
+version = "0.1.0"
+source = "git+https://github.com/rust-vmm/vm-virtio#9621c03f1fa7a79b0a692728062d04fe0c105c74"
+
+[[package]]
 name = "virtio-queue"
 version = "0.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b4f59652909f276e6edd8bf36e9f106480b2202f5f046717b3de14f1b4072a28"
 dependencies = [
  "log",
- "virtio-bindings",
+ "virtio-bindings 0.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "vm-memory",
  "vmm-sys-util",
 ]
@@ -478,6 +483,7 @@ dependencies = [
  "thiserror",
  "vhost",
  "vhost-user-frontend",
+ "virtio-bindings 0.1.0 (git+https://github.com/rust-vmm/vm-virtio)",
  "virtio-queue",
  "vm-memory",
  "vmm-sys-util",

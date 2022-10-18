@@ -11,11 +11,11 @@ use std::{
 };
 
 use vhost_user_frontend::{VirtioInterrupt, VirtioInterruptType};
+use virtio_bindings::virtio_mmio::VIRTIO_MMIO_INT_VRING;
 use vmm_sys_util::epoll::{ControlOperation, Epoll, EpollEvent, EventSet};
 use vmm_sys_util::eventfd::EventFd;
 
 use super::{Error, XenState};
-use libxen_sys::VIRTIO_MMIO_INT_VRING;
 
 pub struct XenVirtioInterrupt {
     state: Arc<RwLock<XenState>>,

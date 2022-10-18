@@ -5,13 +5,8 @@
 
 use vhost::vhost_user::message::VHOST_USER_CONFIG_OFFSET;
 use vhost_user_frontend::{Generic, VirtioDevice};
-use virtio_queue::{Queue, QueueT};
-use vm_memory::ByteValued;
-use vmm_sys_util::eventfd::{EventFd, EFD_NONBLOCK};
-
-use super::{xdm::XenDeviceModel, Error, Result};
-use libxen_sys::{
-    ioreq, IOREQ_READ, IOREQ_TYPE_COPY, IOREQ_TYPE_INVALIDATE, IOREQ_WRITE, VIRTIO_F_VERSION_1,
+use virtio_bindings::virtio_config::VIRTIO_F_VERSION_1;
+use virtio_bindings::virtio_mmio::{
     VIRTIO_MMIO_CONFIG_GENERATION, VIRTIO_MMIO_DEVICE_FEATURES, VIRTIO_MMIO_DEVICE_FEATURES_SEL,
     VIRTIO_MMIO_DEVICE_ID, VIRTIO_MMIO_DRIVER_FEATURES, VIRTIO_MMIO_DRIVER_FEATURES_SEL,
     VIRTIO_MMIO_INTERRUPT_ACK, VIRTIO_MMIO_INTERRUPT_STATUS, VIRTIO_MMIO_MAGIC_VALUE,
@@ -21,6 +16,12 @@ use libxen_sys::{
     VIRTIO_MMIO_QUEUE_USED_HIGH, VIRTIO_MMIO_QUEUE_USED_LOW, VIRTIO_MMIO_STATUS,
     VIRTIO_MMIO_VENDOR_ID, VIRTIO_MMIO_VERSION,
 };
+use virtio_queue::{Queue, QueueT};
+use vm_memory::ByteValued;
+use vmm_sys_util::eventfd::{EventFd, EFD_NONBLOCK};
+
+use super::{xdm::XenDeviceModel, Error, Result};
+use libxen_sys::{ioreq, IOREQ_READ, IOREQ_TYPE_COPY, IOREQ_TYPE_INVALIDATE, IOREQ_WRITE};
 
 pub const VIRTIO_MMIO_IO_SIZE: u64 = 0x200;
 
