@@ -10,10 +10,9 @@ edition = "2018"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-clap = { version = ">=3.0",  features = ["derive"] }
+clap = { version = "3.2.20",  features = ["derive"] }
 field-offset = "0.3.4"
 libc = ">=0.2.95"
-libxen-sys = { git = "https://github.com/vireshk/libxen-sys" }
 log = "0.4.14"
 seccompiler = "0.2.0"
 thiserror = "1.0"
@@ -23,5 +22,6 @@ vhost-user-frontend = { git = "https://github.com/vireshk/vhost", branch = "fron
 virtio-queue = "0.6"
 vm-memory = { version = "0.9.0", features = ["backend-mmap", "backend-atomic", "backend-bitmap"] }
 vmm-sys-util = "=0.10.0"
-xen-ioctls = { git = "https://gitlab.com/mathieupoirier/oxerun/", branch = "xen-ioctls" }
-xen-store = { git = "https://gitlab.com/mathieupoirier/oxerun/", branch = "xen-ioctls" }
+xen-ioctls = { git = "https://gitlab.com/mathieupoirier/oxerun/", branch = "xen-bindings" }
+xen-store = { git = "https://gitlab.com/mathieupoirier/oxerun/", branch = "xen-bindings" }
+xen-bindings = { git = "https://gitlab.com/mathieupoirier/oxerun/", branch = "xen-bindings" }

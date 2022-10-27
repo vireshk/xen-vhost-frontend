@@ -9,7 +9,7 @@ use std::ptr;
 use std::slice;
 
 use super::{Error, Result};
-use libxen_sys::{
+use xen_bindings::bindings::{
     ioreq, ioservid_t, shared_iopage, xen_pfn_t, XENMEM_resource_ioreq_server, XC_PAGE_SHIFT,
 };
 use xen_ioctls::{

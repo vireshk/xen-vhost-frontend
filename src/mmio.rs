@@ -21,7 +21,9 @@ use vm_memory::ByteValued;
 use vmm_sys_util::eventfd::{EventFd, EFD_NONBLOCK};
 
 use super::{xdm::XenDeviceModel, Error, Result};
-use libxen_sys::{ioreq, IOREQ_READ, IOREQ_TYPE_COPY, IOREQ_TYPE_INVALIDATE, IOREQ_WRITE};
+use xen_bindings::bindings::{
+    ioreq, IOREQ_READ, IOREQ_TYPE_COPY, IOREQ_TYPE_INVALIDATE, IOREQ_WRITE,
+};
 
 pub const VIRTIO_MMIO_IO_SIZE: u64 = 0x200;
 

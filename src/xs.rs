@@ -7,11 +7,12 @@ use std::io;
 use std::{str, thread, time};
 
 use vmm_sys_util::epoll::{ControlOperation, Epoll, EpollEvent, EventSet};
+use xen_bindings::bindings::{xs_watch_type, xs_watch_type_XS_WATCH_PATH};
 use xen_store::XenStoreHandle;
 
-use super::{Error, Result, XS_WATCH_TYPE_XS_WATCH_PATH};
+use super::{Error, Result};
 
-use libxen_sys::{
+use xen_bindings::bindings::{
     xenbus_state_XenbusStateInitWait, xenbus_state_XenbusStateInitialising,
     xenbus_state_XenbusStateUnknown,
 };
@@ -147,7 +148,7 @@ impl XsDev {
     }
 
     fn update_fe_domid(&mut self) -> Result<()> {
-        let name = self.read_watch(XS_WATCH_TYPE_XS_WATCH_PATH as usize)?;
+        let name = self.read_watch(xs_watch_type_XS_WATCH_PATH)?;
         if !self.path.eq(&name) {
             return Err(Error::XsError);
         }
@@ -252,7 +253,7 @@ impl XsDev {
             .map_err(|_| Error::XsWatchFailed)
     }
 
-    pub fn read_watch(&self, index: usize) -> Result<String> {
+    pub fn read_watch(&self, index: xs_watch_type) -> Result<String> {
         self.xsh.read_watch(index).map_err(|_| Error::XsWatchFailed)
     }
 

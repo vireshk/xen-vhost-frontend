@@ -29,10 +29,12 @@ use vmm_sys_util::epoll::{ControlOperation, Epoll, EpollEvent, EventSet};
 use vmm_sys_util::eventfd::{EventFd, EFD_NONBLOCK};
 
 use interrupt::{handle_interrupt, XenVirtioInterrupt};
-use libxen_sys::{
-    xenbus_state_XenbusStateInitialising, xenbus_state_XenbusStateUnknown, STATE_IOREQ_INPROCESS,
-    STATE_IOREQ_READY, STATE_IORESP_READY,
+
+use xen_bindings::bindings::{
+    xenbus_state_XenbusStateInitialising, xenbus_state_XenbusStateUnknown,
+    xs_watch_type_XS_WATCH_TOKEN, STATE_IOREQ_INPROCESS, STATE_IOREQ_READY, STATE_IORESP_READY,
 };
+
 use mmio::XenMmio;
 use xdm::XenDeviceModel;
 use xec::XenEventChannel;
@@ -91,10 +93,6 @@ pub enum Error {
     #[error("Failed to kick backend: {0:?}")]
     EventFdWriteFailed(io::Error),
 }
-
-/// These should be fetched via xen-store
-pub const XS_WATCH_TYPE_XS_WATCH_PATH: std::os::raw::c_uint = 0;
-const XS_WATCH_TYPE_XS_WATCH_TOKEN: std::os::raw::c_uint = 1;
 
 #[derive(Parser, Debug)]
 #[clap(author, version, about, long_about = None)]
@@ -232,7 +230,7 @@ impl XenState {
     fn handle_xen_store_event(&mut self) -> Result<()> {
         let name = self
             .xsd
-            .read_watch(XS_WATCH_TYPE_XS_WATCH_TOKEN as usize)
+            .read_watch(xs_watch_type_XS_WATCH_TOKEN)
             .map_err(|_| Error::XsWatchFailed)?;
 
         if self.xsd.be().eq(&name) {

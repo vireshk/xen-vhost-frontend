@@ -14,11 +14,16 @@ use vm_memory::{
 };
 
 use super::{xfm::XenForeignMemory, Error, Result};
-use libxen_sys::{GUEST_RAM_BANKS, XC_PAGE_SHIFT};
+#[cfg(target_arch = "aarch64")]
+use xen_bindings::bindings::GUEST_RAM_BANKS;
+use xen_bindings::bindings::XC_PAGE_SHIFT;
 use xen_ioctls::xc_domain_info;
 
 type MmapRegionBuilder = vm_memory::mmap::MmapRegionBuilder<AtomicBitmap>;
 
+// GUEST_RAM_BANKS is only defined in public/arch-arm.h
+#[cfg(target_arch = "x86_64")]
+pub const GUEST_RAM_BANKS: u32 = 2;
 pub const GUEST_RAM0_BASE: u64 = 0x40000000; // 3GB of low RAM @ 1GB
 pub const GUEST_RAM0_SIZE: u64 = 0xc0000000;
 pub const GUEST_RAM1_BASE: u64 = 0x0200000000;
