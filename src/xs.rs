@@ -17,12 +17,21 @@ use xen_bindings::bindings::{
     xenbus_state_XenbusStateUnknown,
 };
 
+fn dev_to_compatible(name: &str) -> String {
+    match name {
+        "i2c" => "virtio,device22",
+        "gpio" => "virtio,device29",
+        _ => "none",
+    }
+    .to_string()
+}
+
 pub struct XsDev {
     xsh: XenStoreHandle,
     be_domid: u16,
     fe_domid: u16,
     dev_id: i32,
-    dev_name: String,
+    compatible: String,
     be: String,
     fe: String,
     be_state: u32,
@@ -39,12 +48,12 @@ impl XsDev {
             xsh,
             be_domid: 0,
             fe_domid: 0,
-            dev_id: 0,
-            dev_name: dev_name.clone(),
+            dev_id: -1,
+            compatible: dev_to_compatible(&dev_name),
             be: "".to_string(),
             fe: "".to_string(),
             be_state: 0,
-            path: format!("backend/{}", dev_name),
+            path: "backend/virtio".to_string(),
             addr: 0,
             irq: 0,
         })
@@ -173,31 +182,36 @@ impl XsDev {
         // guarantee that.
         thread::sleep(time::Duration::from_millis(200));
 
-        let path = format!("backend/{}/{}", self.dev_name, self.fe_domid);
+        let path = format!("backend/virtio/{}", self.fe_domid);
         let directory = self
             .xsh
             .directory(path.as_str())
             .map_err(|_| Error::XsDirectoryFailed)?;
 
-        if directory.len() > 1 {
-            println!(
-                "got {} devices, but only single device is supported\n",
-                directory.len(),
-            );
+        // Find matching device
+        for dir in directory {
+            let be = format!("backend/virtio/{}/{}", self.fe_domid, dir);
+            let compatible = self.read_str(&be, "type")?;
+
+            if compatible == self.compatible {
+                self.dev_id = dir;
+            }
         }
 
-        self.dev_id = directory[0];
+        if self.dev_id == -1 {
+            return Err(Error::XsError);
+        }
 
         match self.read_str_raw(
             format!(
-                "/local/domain/{}/device/{}/{}",
-                self.fe_domid, self.dev_name, self.dev_id,
+                "/local/domain/{}/device/virtio/{}",
+                self.fe_domid, self.dev_id,
             )
             .as_str(),
         ) {
             Ok(_) => Ok(()),
             Err(e) => {
-                self.dev_id = 0;
+                self.dev_id = -1;
                 Err(e)
             }
         }
@@ -259,10 +273,7 @@ impl XsDev {
 
     pub fn connect_dom(&mut self) -> Result<()> {
         // Update be path
-        self.be = format!(
-            "backend/{}/{}/{}",
-            self.dev_name, self.fe_domid, self.dev_id,
-        );
+        self.be = format!("backend/virtio/{}/{}", self.fe_domid, self.dev_id);
 
         self.be_state = self.read_be_int("state")?;
         if self.be_state != xenbus_state_XenbusStateInitialising {
