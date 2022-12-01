@@ -1,9 +1,9 @@
 [package]
-name = "xen-vhost-master"
+name = "xen-vhost-frontend"
 version = "0.1.0"
 authors = ["Viresh Kumar <viresh.kumar@linaro.org>"]
-keywords = ["xen", "vhost-user", "virtio", "master"]
-description = "Xen vhost master"
+keywords = ["xen", "vhost-user", "virtio", "frontend"]
+description = "Xen vhost frontend"
 license = "Apache-2.0 OR BSD-3-Clause"
 edition = "2018"
 

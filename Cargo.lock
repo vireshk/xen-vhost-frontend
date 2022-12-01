@@ -450,7 +450,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "xen-vhost-master"
+name = "xen-vhost-frontend"
 version = "0.1.0"
 dependencies = [
  "clap",

@@ -42,10 +42,10 @@ use xfm::XenForeignMemory;
 use xgm::XenGuestMem;
 use xs::XsDev;
 
-/// Result for xen-vhost-master operations
+/// Result for xen-vhost-frontend operations
 pub type Result<T> = std::result::Result<T, Error>;
 
-/// Error codes for xen-vhost-master operations
+/// Error codes for xen-vhost-frontend operations
 #[derive(Debug, ThisError)]
 pub enum Error {
     #[error("Invalid Domain info, len {0:?}, domid expected {1:?} info length {2:?}")]
