@@ -7,7 +7,7 @@ use std::io;
 use std::{str, thread, time};
 
 use vmm_sys_util::epoll::{ControlOperation, Epoll, EpollEvent, EventSet};
-use xen_bindings::bindings::{xs_watch_type, xs_watch_type_XS_WATCH_PATH};
+use xen_bindings::bindings::xs_watch_type;
 use xen_store::XenStoreHandle;
 
 use super::{Error, Result};
@@ -157,11 +157,6 @@ impl XsDev {
     }
 
     fn update_fe_domid(&mut self) -> Result<()> {
-        let name = self.read_watch(xs_watch_type_XS_WATCH_PATH)?;
-        if !self.path.eq(&name) {
-            return Err(Error::XsError);
-        }
-
         let directory = self
             .xsh
             .directory(&self.path)
