@@ -16,12 +16,12 @@ libc = ">=0.2.95"
 log = "0.4.14"
 seccompiler = "0.2.0"
 thiserror = "1.0"
-vhost = { version = "0.5.0", features = ["vhost-user-master", "vhost-kern", "vhost-user-slave"] }
+vhost = { version = "0.6.0", features = ["vhost-user-master", "vhost-kern", "vhost-user-slave"] }
 virtio-bindings = { git = "https://github.com/rust-vmm/vm-virtio" }
 vhost-user-frontend = { git = "https://github.com/vireshk/vhost", branch = "frontend/stable" }
-virtio-queue = "0.6"
-vm-memory = { version = "0.9.0", features = ["backend-mmap", "backend-atomic", "backend-bitmap"] }
-vmm-sys-util = "=0.10.0"
+virtio-queue = "0.7"
+vm-memory = { version = "0.10.0", features = ["backend-mmap", "backend-atomic", "backend-bitmap"] }
+vmm-sys-util = "0.11"
 xen-ioctls = { git = "https://gitlab.com/mathieupoirier/oxerun/" }
 xen-store = { git = "https://gitlab.com/mathieupoirier/oxerun/" }
 xen-bindings = { git = "https://gitlab.com/mathieupoirier/oxerun/" }
