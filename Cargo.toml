@@ -22,6 +22,6 @@ vhost-user-frontend = { git = "https://github.com/vireshk/vhost", branch = "fron
 virtio-queue = "0.6"
 vm-memory = { version = "0.9.0", features = ["backend-mmap", "backend-atomic", "backend-bitmap"] }
 vmm-sys-util = "=0.10.0"
-xen-ioctls = { git = "https://gitlab.com/mathieupoirier/oxerun/", branch = "xen-bindings" }
-xen-store = { git = "https://gitlab.com/mathieupoirier/oxerun/", branch = "xen-bindings" }
-xen-bindings = { git = "https://gitlab.com/mathieupoirier/oxerun/", branch = "xen-bindings" }
+xen-ioctls = { git = "https://gitlab.com/mathieupoirier/oxerun/" }
+xen-store = { git = "https://gitlab.com/mathieupoirier/oxerun/" }
+xen-bindings = { git = "https://gitlab.com/mathieupoirier/oxerun/" }
