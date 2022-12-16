@@ -104,7 +104,11 @@ impl XsDev {
     pub fn read_int(&self, base: &str, node: &str) -> Result<u32> {
         let res = self.read_str(base, node)?;
 
-        res.parse::<u32>().map_err(Error::ParseFailure)
+        match res.strip_prefix("0x") {
+            Some(x) => u32::from_str_radix(x, 16),
+            None => res.parse::<u32>(),
+        }
+        .map_err(Error::ParseFailure)
     }
 
     pub fn write_int(&self, base: &str, node: &str, val: u32) -> Result<()> {
