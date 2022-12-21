@@ -15,11 +15,26 @@ This is only tested for `AARCH64` until now.
   current crate. This is designed based on the EPAM's
   [virtio-disk](https://github.com/xen-troops/virtio-disk) implementation.
 
-- [Xen](https://github.com/vireshk/xen/tree/master)
+- [Xen](https://github.com/xen-project/xen)
 
-  Xen requires MMIO and device specific support in order to populate the
-  required devices at the guest. The patches are already shared with upstream
-  lists and are kept here until they are merged.
+  Enable following config options:
+
+  ```
+  diff --git a/xen/arch/arm/configs/arm64_defconfig b/xen/arch/arm/configs/arm64_defconfig
+  index e69de29bb2d1..38ca05a8b416 100644
+  --- a/xen/arch/arm/configs/arm64_defconfig
+  +++ b/xen/arch/arm/configs/arm64_defconfig
+  @@ -0,0 +1,3 @@
+  +CONFIG_IOREQ_SERVER=y
+  +CONFIG_EXPERT=y
+
+  ```
+
+  Latest tested HEAD:
+
+  ```
+  commit c8aaebccc8e8 ("tools/libxl: Fix virtio build error for 32-bit platforms")
+  ```
 
 - [vhost-device](https://github.com/rust-vmm/vhost-device/tree/main)
 
