@@ -20,12 +20,8 @@ use virtio_queue::{Queue, QueueT};
 use vm_memory::ByteValued;
 use vmm_sys_util::eventfd::{EventFd, EFD_NONBLOCK};
 
-use super::{xdm::XenDeviceModel, Error, Result};
-use xen_bindings::bindings::{
-    ioreq, IOREQ_READ, IOREQ_TYPE_COPY, IOREQ_TYPE_INVALIDATE, IOREQ_WRITE,
-};
-
-pub const VIRTIO_MMIO_IO_SIZE: u64 = 0x200;
+use super::{device::XenDevice, Error, Result};
+use xen_bindings::bindings::{ioreq, IOREQ_READ, IOREQ_WRITE};
 
 struct VirtQueue {
     ready: u32,
@@ -37,7 +33,6 @@ struct VirtQueue {
     avail_hi: u32,
     used_lo: u32,
     used_hi: u32,
-    queue: Option<Queue>,
 
     // Guest to device
     kick: EventFd,
@@ -54,15 +49,14 @@ pub struct XenMmio {
     driver_features: u64,
     driver_features_sel: u32,
     interrupt_state: u32,
+    queues_count: usize,
+    queues: Vec<(usize, Queue, EventFd)>,
     vq: Vec<VirtQueue>,
-
-    // Indicates readiness of the virtqueue
-    ready: EventFd,
 }
 
 impl XenMmio {
-    pub fn new(xdm: &mut XenDeviceModel, dev: &Generic, addr: u64) -> Result<Self> {
-        xdm.map_io_range_to_ioreq_server(addr, VIRTIO_MMIO_IO_SIZE)?;
+    pub fn new(gdev: &Generic, addr: u64) -> Result<Self> {
+        let sizes = gdev.queue_max_sizes();
 
         let mut mmio = Self {
             addr,
@@ -75,11 +69,12 @@ impl XenMmio {
             driver_features: 0,
             driver_features_sel: 0,
             interrupt_state: 0,
+            queues_count: sizes.len(),
+            queues: Vec::with_capacity(sizes.len()),
             vq: Vec::new(),
-            ready: EventFd::new(EFD_NONBLOCK).unwrap(),
         };
 
-        for size in dev.queue_max_sizes() {
+        for size in sizes {
             mmio.vq.push(VirtQueue {
                 ready: 0,
                 size: 0,
@@ -91,25 +86,10 @@ impl XenMmio {
                 used_lo: 0,
                 used_hi: 0,
                 kick: EventFd::new(EFD_NONBLOCK).unwrap(),
-                queue: None,
             });
         }
 
         Ok(mmio)
-    }
-
-    pub fn ready(&self) -> EventFd {
-        self.ready.try_clone().unwrap()
-    }
-
-    pub fn queues(&mut self) -> Vec<(usize, Queue, EventFd)> {
-        let mut queues = Vec::new();
-
-        for (i, vq) in self.vq.iter_mut().enumerate() {
-            queues.push((i, vq.queue.take().unwrap(), vq.kick.try_clone().unwrap()));
-        }
-
-        queues
     }
 
     fn kick(&self, vq: u64) -> Result<()> {
@@ -124,26 +104,27 @@ impl XenMmio {
         self.interrupt_state |= mask;
     }
 
-    fn handle_config_read(&self, ioreq: &mut ioreq, dev: &Generic, offset: u64) -> Result<()> {
+    fn config_read(&self, ioreq: &mut ioreq, gdev: &Generic, offset: u64) -> Result<()> {
         let mut data: u64 = 0;
-        dev.read_config(offset, &mut data.as_mut_slice()[0..ioreq.size as usize]);
+        gdev.read_config(offset, &mut data.as_mut_slice()[0..ioreq.size as usize]);
         ioreq.data = data;
 
         Ok(())
     }
 
-    fn handle_config_write(&self, ioreq: &mut ioreq, dev: &mut Generic, offset: u64) -> Result<()> {
-        dev.write_config(offset, &ioreq.data.to_ne_bytes()[0..ioreq.size as usize]);
+    fn config_write(&self, ioreq: &mut ioreq, gdev: &mut Generic, offset: u64) -> Result<()> {
+        gdev.write_config(offset, &ioreq.data.to_ne_bytes()[0..ioreq.size as usize]);
         Ok(())
     }
 
-    fn handle_io_read(&self, ioreq: &mut ioreq, dev: &Generic, offset: u64) -> Result<()> {
+    fn io_read(&self, ioreq: &mut ioreq, dev: &XenDevice, offset: u64) -> Result<()> {
         let vq = &self.vq[self.queue_sel as usize];
+        let gdev = dev.gdev.lock().unwrap();
 
         ioreq.data = match offset as u32 {
             VIRTIO_MMIO_MAGIC_VALUE => u32::from_le_bytes(self.magic),
             VIRTIO_MMIO_VERSION => self.version as u32,
-            VIRTIO_MMIO_DEVICE_ID => dev.device_type() as u32,
+            VIRTIO_MMIO_DEVICE_ID => gdev.device_type() as u32,
             VIRTIO_MMIO_VENDOR_ID => self.vendor_id,
             VIRTIO_MMIO_STATUS => self.status,
             VIRTIO_MMIO_INTERRUPT_STATUS => self.interrupt_state,
@@ -153,7 +134,7 @@ impl XenMmio {
                     return Err(Error::InvalidFeatureSel(self.device_features_sel));
                 }
 
-                let features = (1 << VIRTIO_F_VERSION_1) | dev.device_features();
+                let features = (1 << VIRTIO_F_VERSION_1) | gdev.device_features();
                 (features >> (32 * self.device_features_sel)) as u32
             }
             VIRTIO_MMIO_QUEUE_READY => vq.ready,
@@ -174,8 +155,9 @@ impl XenMmio {
         Ok(())
     }
 
-    fn handle_io_write(&mut self, ioreq: &ioreq, dev: &mut Generic, offset: u64) -> Result<()> {
+    fn io_write(&mut self, ioreq: &ioreq, dev: &XenDevice, offset: u64) -> Result<()> {
         let vq = &mut self.vq[self.queue_sel as usize];
+
         match offset as u32 {
             VIRTIO_MMIO_DEVICE_FEATURES_SEL => self.device_features_sel = ioreq.data as u32,
             VIRTIO_MMIO_DRIVER_FEATURES_SEL => self.driver_features_sel = ioreq.data as u32,
@@ -202,14 +184,23 @@ impl XenMmio {
                 } else {
                     // Guest sends feature sel 1 first, followed by 0. Once that is done, lets
                     // negotiate features.
-                    dev.negotiate_features(self.driver_features)
-                        .map_err(Error::VhostMasterError)?;
+                    dev.gdev
+                        .lock()
+                        .unwrap()
+                        .negotiate_features(self.driver_features)
+                        .map_err(Error::VhostFrontendError)?;
                 }
             }
             VIRTIO_MMIO_QUEUE_READY => {
-                self.vq[self.queue_sel as usize].ready = ioreq.data as u32;
-                if self.vq[self.queue_sel as usize].ready == 1 {
+                if ioreq.data == 1 {
                     self.init_vq();
+
+                    // Wait for all virtqueues to get initialized.
+                    if self.queues.len() == self.queues_count {
+                        self.activate_device(dev)?;
+                    }
+                } else {
+                    self.destroy_vq();
                 }
             }
             VIRTIO_MMIO_QUEUE_NOTIFY => self.kick(ioreq.data)?,
@@ -240,43 +231,45 @@ impl XenMmio {
         queue.set_used_ring_address(Some((used & 0xFFFFFFFF) as u32), Some((used >> 32) as u32));
         queue.set_next_avail(0);
 
-        vq.queue = Some(queue);
-
-        // Wait for all virtqueues to get intialized.
-        for vq in &self.vq {
-            if vq.ready == 0 {
-                return;
-            }
-        }
-
-        self.ready.write(1).unwrap();
+        self.queues
+            .push((self.queue_sel as usize, queue, vq.kick.try_clone().unwrap()));
+        vq.ready = 1;
     }
 
-    pub fn handle_ioreq(&mut self, ioreq: &mut ioreq, dev: &mut Generic) -> Result<()> {
-        match ioreq.type_ as u32 {
-            IOREQ_TYPE_COPY => {
-                let mut offset = ioreq.addr - self.addr;
+    fn destroy_vq(&mut self) {
+        self.queues.drain(..);
+    }
 
-                if offset >= VHOST_USER_CONFIG_OFFSET as u64 {
-                    offset -= VHOST_USER_CONFIG_OFFSET as u64;
+    fn activate_device(&mut self, dev: &XenDevice) -> Result<()> {
+        dev.gdev
+            .lock()
+            .unwrap()
+            .activate(
+                dev.guest.mem(),
+                dev.interrupt(),
+                self.queues.drain(..).collect(),
+            )
+            .map_err(Error::VhostFrontendActivateError)
+    }
 
-                    match ioreq.dir() as u32 {
-                        IOREQ_READ => self.handle_config_read(ioreq, dev, offset)?,
-                        IOREQ_WRITE => self.handle_config_write(ioreq, dev, offset)?,
-                        _ => return Err(Error::InvalidMmioDir(ioreq.dir())),
-                    }
-                } else {
-                    match ioreq.dir() as u32 {
-                        IOREQ_READ => self.handle_io_read(ioreq, dev, offset)?,
-                        IOREQ_WRITE => self.handle_io_write(ioreq, dev, offset)?,
-                        _ => return Err(Error::InvalidMmioDir(ioreq.dir())),
-                    }
-                }
+    pub fn io_event(&mut self, ioreq: &mut ioreq, dev: &XenDevice) -> Result<()> {
+        let mut offset = ioreq.addr - self.addr;
+
+        if offset >= VHOST_USER_CONFIG_OFFSET as u64 {
+            offset -= VHOST_USER_CONFIG_OFFSET as u64;
+            let gdev = &mut dev.gdev.lock().unwrap();
+
+            match ioreq.dir() as u32 {
+                IOREQ_READ => self.config_read(ioreq, gdev, offset),
+                IOREQ_WRITE => self.config_write(ioreq, gdev, offset),
+                _ => Err(Error::InvalidMmioDir(ioreq.dir())),
             }
-
-            IOREQ_TYPE_INVALIDATE => println!("Invalidate Ioreq type is Not implemented"),
-            t => println!("Ioreq type unknown: {}", t),
+        } else {
+            match ioreq.dir() as u32 {
+                IOREQ_READ => self.io_read(ioreq, dev, offset),
+                IOREQ_WRITE => self.io_write(ioreq, dev, offset),
+                _ => Err(Error::InvalidMmioDir(ioreq.dir())),
+            }
         }
-        Ok(())
     }
 }

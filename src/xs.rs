@@ -3,102 +3,48 @@
 //
 // SPDX-License-Identifier: Apache-2.0
 
-use std::io;
-use std::{str, thread, time};
+use std::str;
 
-use vmm_sys_util::epoll::{ControlOperation, Epoll, EpollEvent, EventSet};
-use xen_bindings::bindings::xs_watch_type;
+use xen_bindings::bindings::{xs_watch_type, xs_watch_type_XS_WATCH_PATH};
 use xen_store::XenStoreHandle;
 
-use super::{Error, Result};
+use super::{epoll::XenEpoll, Error, Result, BACKEND_PATH};
 
 use xen_bindings::bindings::{
     xenbus_state_XenbusStateInitWait, xenbus_state_XenbusStateInitialising,
     xenbus_state_XenbusStateUnknown,
 };
 
-fn dev_to_compatible(name: &str) -> String {
-    match name {
-        "i2c" => "virtio,device22",
-        "gpio" => "virtio,device29",
-        _ => "none",
-    }
-    .to_string()
+pub struct XsHandle {
+    handle: XenStoreHandle,
+    epoll: Option<XenEpoll>,
 }
 
-pub struct XsDev {
-    xsh: XenStoreHandle,
-    be_domid: u16,
-    fe_domid: u16,
-    dev_id: i32,
-    compatible: String,
-    be: String,
-    fe: String,
-    be_state: u32,
-    path: String,
-    addr: u32,
-    irq: u8,
-}
-
-impl XsDev {
-    pub fn new(dev_name: String) -> Result<Self> {
-        let xsh = XenStoreHandle::new().map_err(Error::XenIoctlError)?;
-
+impl XsHandle {
+    pub fn new() -> Result<Self> {
         Ok(Self {
-            xsh,
-            be_domid: 0,
-            fe_domid: 0,
-            dev_id: -1,
-            compatible: dev_to_compatible(&dev_name),
-            be: "".to_string(),
-            fe: "".to_string(),
-            be_state: 0,
-            path: "backend/virtio".to_string(),
-            addr: 0,
-            irq: 0,
+            handle: XenStoreHandle::new().map_err(Error::XenIoctlError)?,
+            epoll: None,
         })
     }
 
-    pub fn be_domid(&self) -> u16 {
-        self.be_domid
-    }
+    pub fn new_with_epoll() -> Result<Self> {
+        let mut xsh = Self::new()?;
+        xsh.epoll = Some(XenEpoll::new(vec![xsh.fileno()?])?);
 
-    pub fn fe_domid(&self) -> u16 {
-        self.fe_domid
-    }
-
-    pub fn addr(&self) -> u32 {
-        self.addr
-    }
-
-    pub fn irq(&self) -> u8 {
-        self.irq
-    }
-
-    pub fn be(&self) -> &str {
-        &self.be
-    }
-
-    pub fn fe(&self) -> &str {
-        &self.fe
-    }
-
-    pub fn read_str_raw(&self, path: &str) -> Result<String> {
-        self.xsh.read_str(path).map_err(Error::XenIoctlError)
+        Ok(xsh)
     }
 
     pub fn read_str(&self, base: &str, node: &str) -> Result<String> {
-        self.read_str_raw(format!("{}/{}", base, node).as_str())
+        self.handle
+            .read_str(format!("{}/{}", base, node).as_str())
+            .map_err(Error::XenIoctlError)
     }
 
-    pub fn write_str(&self, base: &str, node: &str, val: &str) -> Result<()> {
-        self.xsh
+    fn write_str(&self, base: &str, node: &str, val: &str) -> Result<()> {
+        self.handle
             .write_str(format!("{}/{}", base, node).as_str(), val)
-            .map_err(|_| Error::XsError)
-    }
-
-    pub fn read_be_str(&self, node: &str) -> Result<String> {
-        self.read_str(&self.be, node)
+            .map_err(Error::XenIoctlError)
     }
 
     pub fn read_int(&self, base: &str, node: &str) -> Result<u32> {
@@ -111,193 +57,89 @@ impl XsDev {
         .map_err(Error::ParseFailure)
     }
 
-    pub fn write_int(&self, base: &str, node: &str, val: u32) -> Result<()> {
+    fn write_int(&self, base: &str, node: &str, val: u32) -> Result<()> {
         let val_str = format!("{}", val);
 
         self.write_str(base, node, &val_str)
     }
 
-    pub fn read_fe_int(&self, node: &str) -> Result<u32> {
-        self.read_int(&self.fe, node)
-    }
-
-    pub fn read_be_int(&self, node: &str) -> Result<u32> {
-        self.read_int(&self.be, node)
-    }
-
-    pub fn write_be_int(&self, node: &str, val: u32) -> Result<()> {
-        self.write_int(&self.be, node, val)
-    }
-
-    pub fn set_be_state(&mut self, state: u32) -> Result<()> {
-        self.write_be_int("state", state)?;
-        self.be_state = state;
-        Ok(())
-    }
-
     pub fn fileno(&self) -> Result<i32> {
-        self.xsh.fileno().map_err(|_| Error::FileOpenFailed)
+        self.handle.fileno().map_err(Error::XenIoctlError)
     }
 
-    pub fn wait_be_state(&self, state: u32) -> Result<u32> {
+    fn wait_state(&self, base: &str, state: u32) -> Result<u32> {
         let state = state | 1 << xenbus_state_XenbusStateUnknown;
 
         loop {
-            let val = self.read_be_int("state")?;
+            let val = self.read_int(base, "state")?;
 
             if ((1 << val) & state) != 0 {
                 return Ok(val);
             }
 
-            self.read_watch(0).map_err(|_| Error::XsReadFailed)?;
-        }
-    }
-
-    pub fn get_be_domid(&mut self) -> Result<()> {
-        let id = self.read_str_raw("domid")?;
-        self.be_domid = id.parse::<u16>().map_err(Error::ParseFailure)?;
-
-        Ok(())
-    }
-
-    fn update_fe_domid(&mut self) -> Result<()> {
-        let directory = self
-            .xsh
-            .directory(&self.path)
-            .map_err(|_| Error::XsDirectoryFailed)?;
-
-        for id in directory {
-            if id as u16 > self.fe_domid {
-                self.fe_domid = id as u16;
-            }
-        }
-
-        self.check_fe_exists()
-    }
-
-    fn check_fe_exists(&mut self) -> Result<()> {
-        // TODO: We need some sign that all devid subdirs are already written to
-        // Xenstore, so it's time to parse them. This delay although works, doesn't
-        // guarantee that.
-        thread::sleep(time::Duration::from_millis(200));
-
-        let path = format!("backend/virtio/{}", self.fe_domid);
-        let directory = self
-            .xsh
-            .directory(path.as_str())
-            .map_err(|_| Error::XsDirectoryFailed)?;
-
-        // Find matching device
-        for dir in directory {
-            let be = format!("backend/virtio/{}/{}", self.fe_domid, dir);
-            let compatible = self.read_str(&be, "type")?;
-
-            if compatible == self.compatible {
-                self.dev_id = dir;
-            }
-        }
-
-        if self.dev_id == -1 {
-            return Err(Error::XsError);
-        }
-
-        match self.read_str_raw(
-            format!(
-                "/local/domain/{}/device/virtio/{}",
-                self.fe_domid, self.dev_id,
-            )
-            .as_str(),
-        ) {
-            Ok(_) => Ok(()),
-            Err(e) => {
-                self.dev_id = -1;
-                Err(e)
-            }
-        }
-    }
-
-    pub fn get_fe_domid(&mut self) -> Result<()> {
-        self.create_watch(self.path.clone(), self.path.clone())?;
-
-        loop {
-            let fd = self.fileno()?;
-            let epoll = Epoll::new().map_err(Error::EpollCreateFd)?;
-            epoll
-                .ctl(
-                    ControlOperation::Add,
-                    fd,
-                    EpollEvent::new(EventSet::IN | EventSet::ERROR | EventSet::HANG_UP, 0),
-                )
-                .map_err(Error::RegisterExitEvent)?;
-
-            let mut events = vec![EpollEvent::new(EventSet::empty(), 0); 1];
-
-            loop {
-                match epoll.wait(-1, &mut events[..]) {
-                    Ok(_) => {
-                        let evset = events[0].event_set();
-                        if evset == EventSet::IN && self.update_fe_domid().is_ok() {
-                            return Ok(());
-                        } else {
-                            thread::sleep(time::Duration::from_millis(100));
-                        }
-                    }
-
-                    Err(e) => {
-                        // It's well defined from the epoll_wait() syscall
-                        // documentation that the epoll loop can be interrupted
-                        // before any of the requested events occurred or the
-                        // timeout expired. In both those cases, epoll_wait()
-                        // returns an error of type EINTR, but this should not
-                        // be considered as a regular error. Instead it is more
-                        // appropriate to retry, by calling into epoll_wait().
-                        if e.kind() != io::ErrorKind::Interrupted {
-                            return Err(Error::EpollWait(e));
-                        }
-                    }
-                }
-            }
+            self.read_path()?;
         }
     }
 
     pub fn create_watch(&mut self, path: String, token: String) -> Result<()> {
-        self.xsh
+        self.handle
             .create_watch(path.as_str(), token.as_str())
-            .map_err(|_| Error::XsWatchFailed)
+            .map_err(Error::XenIoctlError)
     }
 
     pub fn read_watch(&self, index: xs_watch_type) -> Result<String> {
-        self.xsh.read_watch(index).map_err(|_| Error::XsWatchFailed)
+        self.handle.read_watch(index).map_err(Error::XenIoctlError)
     }
 
-    pub fn connect_dom(&mut self) -> Result<()> {
-        // Update be path
-        self.be = format!("backend/virtio/{}/{}", self.fe_domid, self.dev_id);
+    pub fn read_path(&self) -> Result<String> {
+        self.read_watch(xs_watch_type_XS_WATCH_PATH)
+    }
 
-        self.be_state = self.read_be_int("state")?;
-        if self.be_state != xenbus_state_XenbusStateInitialising {
-            return Err(Error::XsInvalidState);
-        }
+    pub fn connect_dom(&mut self, dev_id: u32, fe_domid: u16) -> Result<(String, String)> {
+        let be = format!("{}/{}/{}", BACKEND_PATH, fe_domid, dev_id);
 
-        self.set_be_state(xenbus_state_XenbusStateInitWait)?;
-        self.fe = self.read_be_str("frontend")?;
-
-        let state = self.read_fe_int("state")?;
+        let state = self.read_int(&be, "state")?;
         if state != xenbus_state_XenbusStateInitialising {
-            return Err(Error::XsInvalidState);
+            return Err(Error::XBInvalidState);
+        }
+        self.write_int(&be, "state", xenbus_state_XenbusStateInitWait)?;
+
+        let fe = self.read_str(&be, "frontend")?;
+        let state = self.read_int(&fe, "state")?;
+        if state != xenbus_state_XenbusStateInitialising {
+            return Err(Error::XBInvalidState);
         }
 
-        self.create_watch(self.be.clone(), self.be.clone())?;
-        self.create_watch(self.fe.clone(), self.fe.clone())?;
+        self.create_watch(be.clone(), be.clone())?;
+        self.create_watch(fe.clone(), fe.clone())?;
 
-        let state = self.wait_be_state(1 << xenbus_state_XenbusStateInitWait)?;
+        let state = self.wait_state(&be, 1 << xenbus_state_XenbusStateInitWait)?;
         if state != xenbus_state_XenbusStateInitWait {
-            return Err(Error::XsInvalidState);
+            return Err(Error::XBInvalidState);
         }
 
-        self.addr = self.read_be_int("base")?;
-        self.irq = self.read_be_int("irq")? as u8;
+        Ok((be, fe))
+    }
 
-        Ok(())
+    pub fn wait_for_device(&mut self) -> Result<(u16, u32, bool)> {
+        loop {
+            self.epoll.as_ref().unwrap().wait()?;
+
+            let path = self.read_path()?;
+            let list: Vec<&str> = path.split('/').collect();
+
+            // Only parse events where path matches "BACKEND_PATH/<Guest Num>/<Device Num>"
+            if list.len() == 4 {
+                let dev_id = list[3].parse::<u32>().map_err(Error::ParseFailure)?;
+                let fe_domid = list[2].parse::<u16>().map_err(Error::ParseFailure)?;
+
+                let new = matches!(
+                    self.read_str(BACKEND_PATH, format!("{}/{}", fe_domid, dev_id).as_str()),
+                    Ok(_)
+                );
+
+                return Ok((fe_domid, dev_id, new));
+            }
+        }
     }
 }

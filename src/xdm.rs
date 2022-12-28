@@ -13,7 +13,6 @@ pub struct XenDeviceModel {
     id: Option<u16>,
     domid: u16,
     vcpus: u32,
-    map_range: Option<(u64, u64)>,
 }
 
 impl XenDeviceModel {
@@ -26,7 +25,6 @@ impl XenDeviceModel {
             id: None,
             domid,
             vcpus: 0,
-            map_range: None,
         };
 
         xdm.vcpus = xdm.xdmh.nr_vcpus(domid).map_err(Error::XenIoctlError)?;
@@ -73,20 +71,15 @@ impl XenDeviceModel {
 
         self.xdmh
             .map_io_range_to_ioreq_server(self.domid, self.ioserver_id(), 1, start, end)
-            .map_err(Error::XenIoctlError)?;
-
-        self.map_range = Some((start, end));
-        Ok(())
+            .map_err(Error::XenIoctlError)
     }
 
-    fn ummap_io_range_from_ioreq_server(&self) -> Result<()> {
-        if let Some((start, end)) = self.map_range {
-            self.xdmh
-                .unmap_io_range_from_ioreq_server(self.domid, self.ioserver_id(), 1, start, end)
-                .map_err(Error::XenIoctlError)
-        } else {
-            Ok(())
-        }
+    pub fn ummap_io_range_from_ioreq_server(&self, start: u64, size: u64) -> Result<()> {
+        let end = start + size - 1;
+
+        self.xdmh
+            .unmap_io_range_from_ioreq_server(self.domid, self.ioserver_id(), 1, start, end)
+            .map_err(Error::XenIoctlError)
     }
 
     pub fn set_irq(&self, irq: u32) -> Result<()> {
@@ -98,8 +91,7 @@ impl XenDeviceModel {
 
 impl Drop for XenDeviceModel {
     fn drop(&mut self) {
-        self.ummap_io_range_from_ioreq_server().unwrap();
-        self.set_ioreq_server_state(0).unwrap();
-        self.destroy_ioreq_server().unwrap();
+        self.set_ioreq_server_state(0).ok();
+        self.destroy_ioreq_server().ok();
     }
 }
