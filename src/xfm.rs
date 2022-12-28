@@ -47,6 +47,8 @@ impl XenForeignMemory {
         .map_err(Error::XenIoctlError)?;
 
         let offset = offset_of!(shared_iopage => vcpu_ioreq).get_byte_offset();
+
+        // SAFETY: Safe as offset is within range.
         self.ioreq = unsafe { resource_handle.addr.add(offset) } as *mut ioreq;
         self.res = Some(resource_handle);
         Ok(())
@@ -62,12 +64,14 @@ impl XenForeignMemory {
     }
 
     fn ioreq_offset(&self, vcpu: u32) -> *mut ioreq {
+        // SAFETY: Safe as offset is within range.
         unsafe { self.ioreq.offset(vcpu as isize) }
     }
 
     pub fn ioreq(&self, vcpu: u32) -> Result<&mut ioreq> {
         let ioreq = self.ioreq_offset(vcpu);
 
+        // SAFETY: Safe as we slice is guaranteed to be valid.
         Ok(unsafe { &mut slice::from_raw_parts_mut(ioreq, 1)[0] })
     }
 

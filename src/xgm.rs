@@ -84,6 +84,7 @@ impl XenGuestMem {
             .open("/dev/xen/privcmd")
             .unwrap();
 
+        // SAFETY: Safe as addr and range are guaranteed to be valid here.
         let mmap_region = unsafe {
             MmapRegionBuilder::new_with_bitmap(
                 size as usize,
