@@ -35,11 +35,17 @@ impl XenVirtioInterrupt {
     pub fn as_raw_fd(&self) -> i32 {
         self.call.as_raw_fd()
     }
+
+    fn clear_event(&self) {
+        self.call.read().unwrap();
+    }
 }
 
 impl VirtioInterrupt for XenVirtioInterrupt {
     fn trigger(&self, _int_type: VirtioInterruptType) -> Result<()> {
         let mut state = self.state.write().unwrap();
+
+        self.clear_event();
 
         // Update interrupt state
         state.mmio.update_interrupt_state(VIRTIO_MMIO_INT_VRING);
