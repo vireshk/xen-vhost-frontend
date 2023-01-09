@@ -1,4 +1,4 @@
-// Copyright 2022 Linaro Ltd. All Rights Reserved.
+// Copyright 2022-2023 Linaro Ltd. All Rights Reserved.
 //          Viresh Kumar <viresh.kumar@linaro.org>
 //
 // SPDX-License-Identifier: Apache-2.0
