@@ -42,7 +42,7 @@ This is only tested for `AARCH64` until now.
   project. These are not required to be modified based on hypervisor and are
   truly hypervisor-agnostic.
 
-- [Linux Kernel](https://git.kernel.org/pub/scm/linux/kernel/git/vireshk/linux.git/log/?h=virtio/devices)
+- [Linux Kernel](https://git.kernel.org/pub/scm/linux/kernel/git/vireshk/linux.git/log/?h=xen/host-guest)
 
   The current setup doesn't work with Vanilla kernel and needs some changes
   (hacks). This must be used for the Dom0 kernel. The same image can be used for
@@ -110,21 +110,24 @@ The following steps lets one test I2C `vhost-device` on Xen.
 - Lets run everything
 
   First start the I2C backend. This tells the I2C backend to hook up to
-  `/root/vi2c.sock0` socket and wait for the master to start transacting. The
+  `/root/i2c.sock0` socket and wait for the master to start transacting. The
   I2C controller used here on Dom0 is named `90c0000.i2c` (can be read from
   `/sys/bus/i2c/devices/i2c-0/name`) and `32` here matches the device on I2C bus
   set in the previous commands (`0x20`).
 
   ```
-  $ /root/vhost-device/target/release/vhost-device-i2c -s /root/vi2c.sock -c 1 -l 90c0000.i2c:32'
+  $ /root/vhost-device/target/release/vhost-device-i2c -s /root/i2c.sock -c 1 -l 90c0000.i2c:32'
   ```
 
   Then start xen-vhost-frontend. This provides the path of the socket to the
-  master side and the device to look from Xen, which is I2C here.
+  master side.
 
   ```
-  $ /root/xen-vhost-frontend/target/release/xen-vhost-frontend --socket-path /root/vi2c.sock0 --name i2c'
+  $ /root/xen-vhost-frontend/target/release/xen-vhost-frontend --socket-path /root/'
   ```
+
+  It supports I2C and GPIO for now. You can add support for more devices by
+  adding a relevant entry in `src/supported_devices.rs` file.
 
   Now that all the preparations are done, lets start the guest. The guest kernel
   should have Virtio related config options enabled, along with `i2c-virtio`
