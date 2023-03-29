@@ -8,5 +8,6 @@
 use lazy_static::lazy_static;
 
 lazy_static! {
-    pub static ref SUPPORTED_DEVICES: Vec<(&'static str, u32)> = vec![("i2c", 22), ("gpio", 29)];
+    pub static ref SUPPORTED_DEVICES: Vec<(&'static str, u32)> =
+        vec![("i2c", 22), ("fs", 26), ("gpio", 29)];
 }
