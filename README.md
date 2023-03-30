@@ -2,20 +2,20 @@
 
 ## Description
 This program implements Xen specific `vhost-user-frontend`. This is PoC
-(proof-of-concept) implementation which lets us verify hypervisor-agnosticism of
+(proof-of-concept) implementation that lets us verify hypervisor-agnosticism of
 Rust based `vhost-user` backends.
 
-This is only tested for `AARCH64` until now.
+This is only tested for `AARCH64` currently.
 
 ## Key components
 
 - [xen-vhost-frontend](https://github.com/vireshk/xen-vhost-frontend/tree/main)
 
-  This is the Xen specific implementation of the `vhost-user` protocol, i.e. the
-  current crate. This is designed based on the EPAM's
+  This is the Xen specific implementation of the `vhost-user-frontend` crate.
+  This is based on the EPAM's
   [virtio-disk](https://github.com/xen-troops/virtio-disk) implementation.
 
-- [Xen](https://github.com/xen-project/xen)
+- [Xen](https://github.com/vireshk/xen/tree/master)
 
   Enable following config options:
 
@@ -30,23 +30,55 @@ This is only tested for `AARCH64` until now.
 
   ```
 
-  Latest tested HEAD:
+  There are few patches at the top of this tree which are required to make Xen
+  grant mappings works, which aren't merged in upstream Xen tree yet.
 
-  ```
-  commit c8aaebccc8e8 ("tools/libxl: Fix virtio build error for 32-bit platforms")
-  ```
+  xen-vhost-frontend accepts two arguments as of now, "socket_path" and
+  "foreign_mapping".
 
-- [vhost-device](https://github.com/rust-vmm/vhost-device/tree/main)
+  "socket_path" is the path where the socket will be present. xen-vhost-frontend
+  looks for a socket named in following format at this path:
+  "<device-name>.sock<N>", where device-name is the name that is defined in
+  "src/supported_devices.rs" and N is the index number (starts from 0) of the
+  device created, as you can create multiple instances of the same device for a
+  guest.
+
+  "foreign_mapping" is of boolean type. If present, the memory regions created
+  by xen-vhost-frontend will be of type xen-foreign memory, which maps the
+  entire guest space in advance. With this, the guest configurations shouldn't
+  contain "forced_grant=1" parameter as we need guest to send foreign memory
+  regions.
+
+  When "foreign_mapping" is not present in the arguments, the memory regions
+  created by xen-vhost-frontend are of type xen-grant memory, where the memory
+  is mapped/unmapped on the fly, as and when required. With this, the guest
+  configuration should contain "forced_grant=1" parameter as we need the guest
+  to send grant memory regions.
+
+  xen-vhost-frontend currently supports I2C, FS, and GPIO backends. You can add
+  support for more devices by adding a relevant entry in
+  `src/supported_devices.rs` file. You would also need to update the following
+  structure with number and size of virtqueues:
+  https://github.com/vireshk/vhost/blob/main/crates/vhost-user-frontend/src/lib.rs#L185.
+
+- [vhost-device](https://github.com/vireshk/vhost-device/tree/main)
 
   These are Rust based `vhost-user` backends, maintained inside the rust-vmm
-  project. These are not required to be modified based on hypervisor and are
-  truly hypervisor-agnostic.
+  project. These are truly hypervisor-agnostic.
 
-- [Linux Kernel](https://git.kernel.org/pub/scm/linux/kernel/git/vireshk/linux.git/log/?h=xen/host-guest)
+  Xen grant-mapping work is in progress and isn't upstreamed yet. The necessary
+  changes are updated in Viresh's tree for now.
 
-  The current setup doesn't work with Vanilla kernel and needs some changes
-  (hacks). This must be used for the Dom0 kernel. The same image can be used for
-  guests too, but it is not mandatory.
+- [Linux Kernel](https://git.kernel.org/pub/scm/linux/kernel/git/vireshk/linux.git/log/?h=xen/host)
+
+  Though the setup works fine on vanilla kernel, this branch enables the
+  necessary config options to make it all work. The same image can be used for
+  both host and guest kernels. User needs v6.3-rc1 or later, as it contains a
+  fix for xen grant mappings.
+
+  The following kernel config options must be enabled for Xen grant and foreign
+  mappings: CONFIG_XEN_GNTDEV, CONFIG_XEN_GRANT_DEV_ALLOC, CONFIG_XEN_PRIVCMD,
+  CONFIG_XEN_GRANT_DMA_IOMMU, and CONFIG_XEN_VIRTIO.
 
 
 ## Test Setup
@@ -119,15 +151,12 @@ The following steps lets one test I2C `vhost-device` on Xen.
   $ /root/vhost-device/target/release/vhost-device-i2c -s /root/i2c.sock -c 1 -l 90c0000.i2c:32'
   ```
 
-  Then start xen-vhost-frontend. This provides the path of the socket to the
-  master side.
+  Then start xen-vhost-frontend, by providing path of the socket to the master
+  side. This by default will create grant-mapping for the memory regions.
 
   ```
   $ /root/xen-vhost-frontend/target/release/xen-vhost-frontend --socket-path /root/'
   ```
-
-  It supports I2C and GPIO for now. You can add support for more devices by
-  adding a relevant entry in `src/supported_devices.rs` file.
 
   Now that all the preparations are done, lets start the guest. The guest kernel
   should have Virtio related config options enabled, along with `i2c-virtio`
@@ -153,7 +182,7 @@ The following steps lets one test I2C `vhost-device` on Xen.
   vcpus=3
   command="console=hvc0 earlycon=xenboot"
   name="domu"
-  virtio = [ "type=virtio,device22, transport=mmio" ]
+  virtio = [ "type=virtio,device22, transport=mmio, forced_grant=1" ]
   ```
 
   The device type here defines the device to be emulated on the guest. The type
