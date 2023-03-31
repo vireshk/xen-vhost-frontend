@@ -23,8 +23,8 @@ use virtio_bindings::virtio_ring::{__virtio16, vring_avail, vring_used, vring_us
 use virtio_queue::{Descriptor, Queue, QueueT};
 use vm_memory::ByteValued;
 use vm_memory::{
-    guest_memory::FileOffset, GuestAddress, GuestMemoryAtomic, GuestMemoryRegion, GuestMmapRange,
-    MmapXenFlags,
+    guest_memory::FileOffset, GuestAddress, GuestMemoryAtomic, GuestMemoryRegion, MmapRange,
+    MmapRegion, MmapXenFlags,
 };
 
 use vmm_sys_util::eventfd::{EventFd, EFD_NONBLOCK};
@@ -277,14 +277,8 @@ impl XenMmio {
             .open(path)
             .unwrap();
 
-        let region = GuestRegionMmap::from_range(&GuestMmapRange::with_xen(
-            addr,
-            size,
-            Some(FileOffset::new(file, 0)),
-            flags,
-            data,
-        ))
-        .unwrap();
+        let range = MmapRange::new(size, Some(FileOffset::new(file, 0)), addr, flags, data);
+        let region = GuestRegionMmap::new(MmapRegion::from_range(range).unwrap(), addr).unwrap();
 
         self.regions.push(region);
 

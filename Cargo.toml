@@ -17,11 +17,11 @@ libc = ">=0.2.95"
 log = "0.4.14"
 seccompiler = "0.2.0"
 thiserror = "1.0"
-vhost = { git = "https://github.com/vireshk/vhost", branch = "main", features = ["vhost-user-master", "vhost-kern", "vhost-user-slave", "xen"] }
-virtio-bindings = { git = "https://github.com/vireshk/vm-virtio", branch = "main" }
-vhost-user-frontend = { git = "https://github.com/vireshk/vhost", branch = "main", features = ["xen"] }
-virtio-queue = { git = "https://github.com/vireshk/vm-virtio", branch = "main" }
-vm-memory = { git = "https://github.com/vireshk/vm-memory", branch = "main", features = ["backend-mmap", "backend-atomic", "backend-bitmap", "xen"] }
+vhost = { version = "0.8", features = ["vhost-user-master", "vhost-kern", "vhost-user-slave", "xen"] }
+virtio-bindings = "0.2.1"
+vhost-user-frontend = { git = "https://github.com/vireshk/vhost", branch = "frontend/stable", features = ["xen"] }
+virtio-queue = "0.9"
+vm-memory = { version = "0.12", features = ["backend-mmap", "backend-atomic", "backend-bitmap", "xen"] }
 vmm-sys-util = "0.11"
 xen-ioctls = { git = "https://github.com/mathieupoirier/xen-sys" }
 xen-store = { git = "https://github.com/mathieupoirier/xen-sys" }
