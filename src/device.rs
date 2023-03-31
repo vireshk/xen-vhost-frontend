@@ -29,7 +29,7 @@ pub const VIRTIO_MMIO_IO_SIZE: u64 = 0x200;
 #[clap(author, version, about, long_about = None)]
 struct DeviceArgs {
     /// Location of vhost-user Unix domain socket.
-    #[clap(short, long, default_value = "~/")]
+    #[clap(short, long)]
     socket_path: String,
 }
 
@@ -106,6 +106,11 @@ impl XenDevice {
             num_queues: num,
             queue_size: size as u16,
         };
+
+        println!(
+            "Connecting to {} device backend over {} socket..",
+            dev.name, vu_cfg.socket
+        );
 
         let gdev = Generic::new(
             vu_cfg,
