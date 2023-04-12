@@ -318,6 +318,8 @@ impl XenMmio {
 
         size = vq_size * std::mem::size_of::<__virtio16>();
         size += std::mem::size_of::<vring_avail>();
+        // Extra 2 bytes for vring_used_elem at the end of avail ring
+        size += std::mem::size_of::<__virtio16>();
         self.map_grant_region(queue.avail_ring(), size, domid, 0)?;
 
         size = vq_size * std::mem::size_of::<vring_used_elem>();
