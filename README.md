@@ -33,23 +33,23 @@ This is only tested for `AARCH64` currently.
   There are few patches at the top of this tree which are required to make Xen
   grant mappings works, which aren't merged in upstream Xen tree yet.
 
-  xen-vhost-frontend accepts two arguments as of now, "socket_path" and
-  "foreign_mapping".
+  xen-vhost-frontend accepts two arguments as of now, "socket-path" and
+  "foreign-mapping".
 
-  "socket_path" is the path where the socket will be present. xen-vhost-frontend
+  "socket-path" is the path where the socket will be present. xen-vhost-frontend
   looks for a socket named in following format at this path:
   "<device-name>.sock<N>", where device-name is the name that is defined in
   "src/supported_devices.rs" and N is the index number (starts from 0) of the
   device created, as you can create multiple instances of the same device for a
   guest.
 
-  "foreign_mapping" is of boolean type. If present, the memory regions created
+  "foreign-mapping" is of boolean type. If present, the memory regions created
   by xen-vhost-frontend will be of type xen-foreign memory, which maps the
   entire guest space in advance. With this, the guest configurations shouldn't
   contain "forced_grant=1" parameter as we need guest to send foreign memory
   regions.
 
-  When "foreign_mapping" is not present in the arguments, the memory regions
+  When "foreign-mapping" is not present in the arguments, the memory regions
   created by xen-vhost-frontend are of type xen-grant memory, where the memory
   is mapped/unmapped on the fly, as and when required. With this, the guest
   configuration should contain "forced_grant=1" parameter as we need the guest
