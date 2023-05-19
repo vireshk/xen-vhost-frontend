@@ -23,9 +23,7 @@ use virtio_bindings::virtio_ring::{__virtio16, vring_avail, vring_used, vring_us
 use virtio_queue::{Descriptor, Queue, QueueT};
 use vm_memory::ByteValued;
 use vm_memory::{
-    guest_memory::FileOffset,
-    mmap_xen::{MmapXenFlags, MmapXenForeign, MmapXenGrant},
-    GuestAddress, GuestMemoryAtomic, GuestMemoryRegion, MmapInternal,
+    guest_memory::FileOffset, GuestAddress, GuestMemoryAtomic, GuestMemoryRegion, MmapXenFlags,
 };
 
 use vmm_sys_util::eventfd::{EventFd, EFD_NONBLOCK};
@@ -264,12 +262,13 @@ impl XenMmio {
             .sort_by(|a, b| a.start_addr().partial_cmp(&b.start_addr()).unwrap());
     }
 
-    fn map_region<M: MmapInternal>(
+    fn map_region(
         &mut self,
         addr: GuestAddress,
         size: usize,
         path: &str,
-        map: M,
+        flags: u32,
+        data: u32,
     ) -> Result<()> {
         let file = OpenOptions::new()
             .read(true)
@@ -277,8 +276,9 @@ impl XenMmio {
             .open(path)
             .unwrap();
 
-        let file_offset = Some(FileOffset::new(file, 0));
-        let region = GuestRegionMmap::from_range_with_map(map, addr, size, file_offset).unwrap();
+        let region =
+            GuestRegionMmap::from_range(addr, size, Some(FileOffset::new(file, 0)), flags, data)
+                .unwrap();
 
         self.regions.push(region);
 
@@ -286,10 +286,13 @@ impl XenMmio {
     }
 
     fn map_foreign_region(&mut self, domid: u16) -> Result<()> {
-        let addr = GuestAddress(GUEST_RAM0_BASE);
-        let map = MmapXenForeign::new_with(domid as u32, addr, 0).unwrap();
-
-        self.map_region(addr, self.guest_size, "/dev/xen/privcmd", map)
+        self.map_region(
+            GuestAddress(GUEST_RAM0_BASE),
+            self.guest_size,
+            "/dev/xen/privcmd",
+            MmapXenFlags::FOREIGN.bits(),
+            domid as u32,
+        )
     }
 
     // Maps entire guest address space in one region.
@@ -305,10 +308,13 @@ impl XenMmio {
             return Ok(());
         }
 
-        let addr = GuestAddress(addr);
-        let map = MmapXenGrant::new_with(domid as u32, addr, flags).unwrap();
-
-        self.map_region(addr, size, "/dev/xen/gntdev", map)
+        self.map_region(
+            GuestAddress(addr),
+            size,
+            "/dev/xen/gntdev",
+            flags | MmapXenFlags::GRANT.bits(),
+            domid as u32,
+        )
     }
 
     // Maps virtqueues in advance.
