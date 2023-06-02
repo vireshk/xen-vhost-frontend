@@ -45,14 +45,14 @@ This is only tested for `AARCH64` currently.
 
   "foreign-mapping" is of boolean type. If present, the memory regions created
   by xen-vhost-frontend will be of type xen-foreign memory, which maps the
-  entire guest space in advance. With this, the guest configurations shouldn't
-  contain "grant_usage=enabled" parameter as we need guest to send foreign
-  memory regions.
+  entire guest space in advance. With this, the guest configurations should
+  contain "grant_usage=0" parameter as we need guest to send foreign memory
+  regions.
 
   When "foreign-mapping" is not present in the arguments, the memory regions
   created by xen-vhost-frontend are of type xen-grant memory, where the memory
   is mapped/unmapped on the fly, as and when required. With this, the guest
-  configuration should contain "grant_usage=enabled" parameter, as we need the
+  configuration should contain "grant_usage=1" parameter, as we need the
   guest to send grant memory regions. This parameter is only required when
   backend is running in Dom0, else this can be skipped if the backend is running
   in any of the domUs.
@@ -184,7 +184,7 @@ The following steps lets one test I2C `vhost-device` on Xen.
   vcpus=3
   command="console=hvc0 earlycon=xenboot"
   name="domu"
-  virtio = [ "type=virtio,device22, transport=mmio, grant_usage=enabled" ]
+  virtio = [ "type=virtio,device22, transport=mmio, grant_usage=1" ]
   ```
 
   The device type here defines the device to be emulated on the guest. The type
