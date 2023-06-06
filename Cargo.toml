@@ -23,6 +23,6 @@ vhost-user-frontend = { git = "https://github.com/vireshk/vhost", branch = "main
 virtio-queue = { git = "https://github.com/vireshk/vm-virtio", branch = "main" }
 vm-memory = { git = "https://github.com/vireshk/vm-memory", branch = "main", features = ["backend-mmap", "backend-atomic", "backend-bitmap", "xen"] }
 vmm-sys-util = "0.11"
-xen-ioctls = { git = "https://gitlab.com/mathieupoirier/oxerun/" }
-xen-store = { git = "https://gitlab.com/mathieupoirier/oxerun/" }
-xen-bindings = { git = "https://gitlab.com/mathieupoirier/oxerun/" }
+xen-ioctls = { git = "https://github.com/mathieupoirier/xen-sys" }
+xen-store = { git = "https://github.com/mathieupoirier/xen-sys" }
+xen-bindings = { git = "https://github.com/mathieupoirier/xen-sys" }

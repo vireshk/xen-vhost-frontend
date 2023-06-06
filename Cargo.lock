@@ -83,9 +83,9 @@ checksum = "baf1de4339761588bc0619e3cbc0120ee582ebb74b53b4efbf79117bd2da40fd"
 
 [[package]]
 name = "clap"
-version = "4.3.0"
+version = "4.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "93aae7a4192245f70fe75dd9157fc7b4a5bf53e88d30bd4396f7d8f9284d5acc"
+checksum = "401a4694d2bf92537b6867d94de48c4842089645fdcdf6c71865b175d836e9c2"
 dependencies = [
  "clap_builder",
  "clap_derive",
@@ -94,9 +94,9 @@ dependencies = [
 
 [[package]]
 name = "clap_builder"
-version = "4.3.0"
+version = "4.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4f423e341edefb78c9caba2d9c7f7687d0e72e89df3ce3394554754393ac3990"
+checksum = "72394f3339a76daf211e57d4bcb374410f3965dcc606dd0e03738c7888766980"
 dependencies = [
  "anstream",
  "anstyle",
@@ -107,9 +107,9 @@ dependencies = [
 
 [[package]]
 name = "clap_derive"
-version = "4.3.0"
+version = "4.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "191d9573962933b4027f932c600cd252ce27a8ad5979418fe78e43c07996f27b"
+checksum = "b8cd2b2a819ad6eec39e8f1d6b53001af1e5469f8c177579cdaeb313115b825f"
 dependencies = [
  "heck",
  "proc-macro2",
@@ -162,11 +162,11 @@ dependencies = [
 
 [[package]]
 name = "field-offset"
-version = "0.3.5"
+version = "0.3.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a3cf3a800ff6e860c863ca6d4b16fd999db8b752819c1606884047b73e468535"
+checksum = "38e2275cc4e4fc009b0669731a1e5ab7ebf11f469eaede2bab9309a5b4d6057f"
 dependencies = [
- "memoffset 0.8.0",
+ "memoffset 0.9.0",
  "rustc_version",
 ]
 
@@ -213,9 +213,9 @@ checksum = "e2abad23fbc42b3700f2f279844dc832adb2b2eb069b2df918f455c4e18cc646"
 
 [[package]]
 name = "libc"
-version = "0.2.144"
+version = "0.2.145"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2b00cc1c228a6782d0f076e7b232802e0c5689d41bb5df366f2a6b6621cfdfe1"
+checksum = "fc86cde3ff845662b8f4ef6cb50ea0e20c524eb3d29ae048287e06a1b3fa6a81"
 
 [[package]]
 name = "linux-raw-sys"
@@ -240,9 +240,9 @@ dependencies = [
 
 [[package]]
 name = "memoffset"
-version = "0.8.0"
+version = "0.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d61c719bcfbcf5d62b3a09efa6088de8c54bc0bfcd3ea7ae39fcc186108b8de1"
+checksum = "5a634b1c61a95585bd15607c6ab0c4e5b226e695ff2800ba0cdccddf208c406c"
 dependencies = [
  "autocfg",
 ]
@@ -261,9 +261,9 @@ dependencies = [
 
 [[package]]
 name = "once_cell"
-version = "1.17.2"
+version = "1.18.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9670a07f94779e00908f3e686eab508878ebb390ba6e604d3a284c00e8d0487b"
+checksum = "dd8b5dd2ae5ed71462c540258bedcb51965123ad7e7ccf4b9a8cafaa4a63576d"
 
 [[package]]
 name = "proc-macro2"
@@ -417,7 +417,7 @@ dependencies = [
 [[package]]
 name = "vm-memory"
 version = "0.11.0"
-source = "git+https://github.com/vireshk/vm-memory?branch=main#479433a988916b9f559c44f4f4278baccc4a94bb"
+source = "git+https://github.com/vireshk/vm-memory?branch=main#972e7c8afb483d207b76e8dc39c3f2a41994c6b5"
 dependencies = [
  "arc-swap",
  "bitflags",
@@ -527,13 +527,13 @@ checksum = "1a515f5799fe4961cb532f983ce2b23082366b898e52ffbce459c86f67c8378a"
 
 [[package]]
 name = "xen-bindings"
-version = "0.0.0-pre1"
-source = "git+https://gitlab.com/mathieupoirier/oxerun/#5da838e24692d5e7d7d1a1f90db46c588ed90bc6"
+version = "0.1.0"
+source = "git+https://github.com/mathieupoirier/xen-sys#379b5d0760858e3675d3e30a95fe26fd0783eba3"
 
 [[package]]
 name = "xen-ioctls"
-version = "0.0.0-pre1"
-source = "git+https://gitlab.com/mathieupoirier/oxerun/#5da838e24692d5e7d7d1a1f90db46c588ed90bc6"
+version = "0.1.0"
+source = "git+https://github.com/mathieupoirier/xen-sys#379b5d0760858e3675d3e30a95fe26fd0783eba3"
 dependencies = [
  "libc",
  "vmm-sys-util",
@@ -541,8 +541,8 @@ dependencies = [
 
 [[package]]
 name = "xen-store"
-version = "0.0.0-pre1"
-source = "git+https://gitlab.com/mathieupoirier/oxerun/#5da838e24692d5e7d7d1a1f90db46c588ed90bc6"
+version = "0.1.0"
+source = "git+https://github.com/mathieupoirier/xen-sys#379b5d0760858e3675d3e30a95fe26fd0783eba3"
 dependencies = [
  "libc",
  "nix",
