@@ -51,8 +51,8 @@ impl GuestDevices {
 
 pub struct XenGuest {
     pub xdm: Mutex<XenDeviceModel>,
-    xec: Mutex<XenEventChannel>,
-    xfm: Mutex<XenForeignMemory>,
+    pub xec: Mutex<XenEventChannel>,
+    pub xfm: Mutex<XenForeignMemory>,
     pub fe_domid: u16,
     devices: Mutex<GuestDevices>,
     handle: Mutex<Option<JoinHandle<()>>>,

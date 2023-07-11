@@ -6,6 +6,7 @@
 use vmm_sys_util::eventfd::EventFd;
 
 use super::{Error, Result};
+use xen_bindings::bindings::ioreq;
 use xen_ioctls::{XenDeviceModelHandle, HVM_IOREQSRV_BUFIOREQ_OFF};
 
 pub const VIRTIO_IRQ_HIGH: u32 = 1;
@@ -91,6 +92,25 @@ impl XenDeviceModel {
         } else {
             self.xdmh
                 .clear_irqfd(fd, self.domid, irq, VIRTIO_IRQ_HIGH as u8)
+        }
+        .map_err(Error::XenIoctlError)
+    }
+
+    pub fn set_ioeventfd(
+        &self,
+        kick: &EventFd,
+        ioreq: &mut ioreq,
+        ports: &[u32],
+        addr: u64,
+        vq: u32,
+        set: bool,
+    ) -> Result<()> {
+        if set {
+            self.xdmh
+                .set_ioeventfd(kick, ioreq, ports, addr, 4, vq, self.vcpus, self.domid)
+        } else {
+            self.xdmh
+                .clear_ioeventfd(kick, ioreq, ports, addr, 4, vq, self.vcpus, self.domid)
         }
         .map_err(Error::XenIoctlError)
     }

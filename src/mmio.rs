@@ -4,6 +4,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use std::fs::OpenOptions;
+use std::sync::Arc;
 
 use vhost::vhost_user::message::{VhostUserProtocolFeatures, VHOST_USER_CONFIG_OFFSET};
 use vhost_user_frontend::{Generic, VirtioDevice};
@@ -29,7 +30,7 @@ use vm_memory::{
 
 use vmm_sys_util::eventfd::{EventFd, EFD_NONBLOCK};
 
-use super::{device::XenDevice, Error, Result};
+use super::{device::XenDevice, guest::XenGuest, Error, Result};
 use xen_bindings::bindings::{ioreq, IOREQ_READ, IOREQ_WRITE, XC_PAGE_SHIFT, XC_PAGE_SIZE};
 use xen_ioctls::xc_domain_info;
 
@@ -84,12 +85,18 @@ pub struct XenMmio {
     regions: Vec<GuestRegionMmap>,
     foreign_mapping: bool,
     guest_size: usize,
+    guest: Arc<XenGuest>,
 }
 
 impl XenMmio {
-    pub fn new(gdev: &Generic, addr: u64, foreign_mapping: bool, domid: u16) -> Result<Self> {
+    pub fn new(
+        gdev: &Generic,
+        guest: Arc<XenGuest>,
+        addr: u64,
+        foreign_mapping: bool,
+    ) -> Result<Self> {
         let sizes = gdev.queue_max_sizes();
-        let guest_size = get_dom_size(domid)?;
+        let guest_size = get_dom_size(guest.fe_domid)?;
 
         let mut mmio = Self {
             addr,
@@ -108,9 +115,23 @@ impl XenMmio {
             regions: Vec::new(),
             foreign_mapping,
             guest_size,
+            guest: guest.clone(),
         };
 
-        for size in sizes {
+        let xfm = guest.xfm.lock().unwrap();
+        let ioreq = xfm.ioreq(0).unwrap();
+        let xec = guest.xec.lock().unwrap();
+
+        for (index, size) in sizes.iter().enumerate() {
+            let kick = EventFd::new(EFD_NONBLOCK).unwrap();
+
+            guest
+                .xdm
+                .lock()
+                .unwrap()
+                .set_ioeventfd(&kick, ioreq, xec.ports(), addr, index as u32, true)
+                .unwrap();
+
             mmio.vq.push(VirtQueue {
                 ready: 0,
                 size: 0,
@@ -121,25 +142,17 @@ impl XenMmio {
                 avail_hi: 0,
                 used_lo: 0,
                 used_hi: 0,
-                kick: EventFd::new(EFD_NONBLOCK).unwrap(),
+                kick,
             });
         }
 
         // Foreign memory must be mapped in advance as it takes considerable amount of time to do
         // it, and doing it later times out the guest kernel.
         if foreign_mapping {
-            mmio.map_foreign_region(domid)?;
+            mmio.map_foreign_region(guest.fe_domid)?;
         }
 
         Ok(mmio)
-    }
-
-    fn kick(&self, vq: u64) -> Result<()> {
-        // Notify backend
-        self.vq[vq as usize]
-            .kick
-            .write(1)
-            .map_err(Error::EventFdWriteFailed)
     }
 
     fn config_read(&self, ioreq: &mut ioreq, gdev: &Generic, offset: u64) -> Result<()> {
@@ -246,7 +259,9 @@ impl XenMmio {
                     self.destroy_vq();
                 }
             }
-            VIRTIO_MMIO_QUEUE_NOTIFY => self.kick(ioreq.data)?,
+            VIRTIO_MMIO_QUEUE_NOTIFY => {
+                // This is handled in the Linux kernel now. Nothing to do here.
+            }
 
             _ => return Err(Error::InvalidMmioAddr("write", offset)),
         }
@@ -437,6 +452,25 @@ impl XenMmio {
                 IOREQ_WRITE => self.io_write(ioreq, dev, offset),
                 _ => Err(Error::InvalidMmioDir(ioreq.dir())),
             }
+        }
+    }
+}
+
+impl Drop for XenMmio {
+    fn drop(&mut self) {
+        let xfm = self.guest.xfm.lock().unwrap();
+        let ioreq = xfm.ioreq(0).unwrap();
+        let xec = self.guest.xec.lock().unwrap();
+
+        for (index, vq) in self.vq.iter().enumerate() {
+            let kick = vq.kick.try_clone().unwrap();
+
+            self.guest
+                .xdm
+                .lock()
+                .unwrap()
+                .set_ioeventfd(&kick, ioreq, xec.ports(), self.addr, index as u32, false)
+                .unwrap();
         }
     }
 }

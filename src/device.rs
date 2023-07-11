@@ -115,7 +115,7 @@ impl XenDevice {
         )
         .map_err(Error::VhostFrontendError)?;
 
-        let mmio = XenMmio::new(&gdev, addr, DEVICE_ARGS.foreign_mapping, guest.fe_domid)?;
+        let mmio = XenMmio::new(&gdev, guest.clone(), addr, DEVICE_ARGS.foreign_mapping)?;
 
         let dev = Arc::new(Self {
             gdev: Mutex::new(gdev),

@@ -21,6 +21,10 @@ impl XenEventChannel {
         })
     }
 
+    pub fn ports(&self) -> &[u32] {
+        &self.ports
+    }
+
     pub fn bind(&mut self, xfm: &XenForeignMemory, domid: u16, vcpus: u32) -> Result<()> {
         for cpu in 0..vcpus {
             let ioreq = xfm.ioreq(cpu)?;
