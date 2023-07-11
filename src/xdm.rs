@@ -3,6 +3,8 @@
 //
 // SPDX-License-Identifier: Apache-2.0
 
+use vmm_sys_util::eventfd::EventFd;
+
 use super::{Error, Result};
 use xen_ioctls::{XenDeviceModelHandle, HVM_IOREQSRV_BUFIOREQ_OFF};
 
@@ -82,10 +84,15 @@ impl XenDeviceModel {
             .map_err(Error::XenIoctlError)
     }
 
-    pub fn set_irq(&self, irq: u32) -> Result<()> {
-        self.xdmh
-            .set_irq_level(self.domid, irq, VIRTIO_IRQ_HIGH)
-            .map_err(Error::XenIoctlError)
+    pub fn set_irqfd(&self, fd: EventFd, irq: u32, set: bool) -> Result<()> {
+        if set {
+            self.xdmh
+                .set_irqfd(fd, self.domid, irq, VIRTIO_IRQ_HIGH as u8)
+        } else {
+            self.xdmh
+                .clear_irqfd(fd, self.domid, irq, VIRTIO_IRQ_HIGH as u8)
+        }
+        .map_err(Error::XenIoctlError)
     }
 }
 

@@ -12,12 +12,12 @@ use virtio_bindings::virtio_config::{VIRTIO_F_IOMMU_PLATFORM, VIRTIO_F_VERSION_1
 use virtio_bindings::virtio_mmio::{
     VIRTIO_MMIO_CONFIG_GENERATION, VIRTIO_MMIO_DEVICE_FEATURES, VIRTIO_MMIO_DEVICE_FEATURES_SEL,
     VIRTIO_MMIO_DEVICE_ID, VIRTIO_MMIO_DRIVER_FEATURES, VIRTIO_MMIO_DRIVER_FEATURES_SEL,
-    VIRTIO_MMIO_INTERRUPT_ACK, VIRTIO_MMIO_INTERRUPT_STATUS, VIRTIO_MMIO_MAGIC_VALUE,
-    VIRTIO_MMIO_QUEUE_AVAIL_HIGH, VIRTIO_MMIO_QUEUE_AVAIL_LOW, VIRTIO_MMIO_QUEUE_DESC_HIGH,
-    VIRTIO_MMIO_QUEUE_DESC_LOW, VIRTIO_MMIO_QUEUE_NOTIFY, VIRTIO_MMIO_QUEUE_NUM,
-    VIRTIO_MMIO_QUEUE_NUM_MAX, VIRTIO_MMIO_QUEUE_READY, VIRTIO_MMIO_QUEUE_SEL,
-    VIRTIO_MMIO_QUEUE_USED_HIGH, VIRTIO_MMIO_QUEUE_USED_LOW, VIRTIO_MMIO_STATUS,
-    VIRTIO_MMIO_VENDOR_ID, VIRTIO_MMIO_VERSION,
+    VIRTIO_MMIO_INTERRUPT_ACK, VIRTIO_MMIO_INTERRUPT_STATUS, VIRTIO_MMIO_INT_VRING,
+    VIRTIO_MMIO_MAGIC_VALUE, VIRTIO_MMIO_QUEUE_AVAIL_HIGH, VIRTIO_MMIO_QUEUE_AVAIL_LOW,
+    VIRTIO_MMIO_QUEUE_DESC_HIGH, VIRTIO_MMIO_QUEUE_DESC_LOW, VIRTIO_MMIO_QUEUE_NOTIFY,
+    VIRTIO_MMIO_QUEUE_NUM, VIRTIO_MMIO_QUEUE_NUM_MAX, VIRTIO_MMIO_QUEUE_READY,
+    VIRTIO_MMIO_QUEUE_SEL, VIRTIO_MMIO_QUEUE_USED_HIGH, VIRTIO_MMIO_QUEUE_USED_LOW,
+    VIRTIO_MMIO_STATUS, VIRTIO_MMIO_VENDOR_ID, VIRTIO_MMIO_VERSION,
 };
 use virtio_bindings::virtio_ring::{__virtio16, vring_avail, vring_used, vring_used_elem};
 use virtio_queue::{Descriptor, Queue, QueueT};
@@ -142,10 +142,6 @@ impl XenMmio {
             .map_err(Error::EventFdWriteFailed)
     }
 
-    pub fn update_interrupt_state(&mut self, mask: u32) {
-        self.interrupt_state |= mask;
-    }
-
     fn config_read(&self, ioreq: &mut ioreq, gdev: &Generic, offset: u64) -> Result<()> {
         let mut data: u64 = 0;
         gdev.read_config(offset, &mut data.as_mut_slice()[0..ioreq.size as usize]);
@@ -169,7 +165,7 @@ impl XenMmio {
             VIRTIO_MMIO_DEVICE_ID => gdev.device_type(),
             VIRTIO_MMIO_VENDOR_ID => self.vendor_id,
             VIRTIO_MMIO_STATUS => self.status,
-            VIRTIO_MMIO_INTERRUPT_STATUS => self.interrupt_state,
+            VIRTIO_MMIO_INTERRUPT_STATUS => self.interrupt_state | VIRTIO_MMIO_INT_VRING,
             VIRTIO_MMIO_QUEUE_NUM_MAX => vq.size_max,
             VIRTIO_MMIO_DEVICE_FEATURES => {
                 if self.device_features_sel > 1 {

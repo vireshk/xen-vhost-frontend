@@ -45,7 +45,7 @@ impl FrontendGuests {
 
     fn remove_device(&mut self, fe_domid: u16, dev_id: u32) {
         let guest = self.find_guest(fe_domid).unwrap();
-        guest.remove_device(dev_id).exit();
+        guest.remove_device(dev_id);
 
         if guest.is_empty() {
             self.remove_guest(fe_domid);

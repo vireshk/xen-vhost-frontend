@@ -3,98 +3,54 @@
 //
 // SPDX-License-Identifier: Apache-2.0
 
-use std::{
-    io::Result as IoResult,
-    os::unix::io::AsRawFd,
-    sync::{Arc, Mutex},
-    thread::{Builder, JoinHandle},
-};
+use std::{io::Result as IoResult, sync::Arc};
 
-use vhost_user_frontend::{VirtioDevice, VirtioInterrupt, VirtioInterruptType};
-use virtio_bindings::virtio_mmio::VIRTIO_MMIO_INT_VRING;
+use vhost_user_frontend::{VirtioInterrupt, VirtioInterruptType};
 use vmm_sys_util::eventfd::EventFd;
 
-use super::{device::XenDevice, epoll::XenEpoll, Result};
+use super::device::XenDevice;
 
 pub struct XenInterrupt {
     dev: Arc<XenDevice>,
     // Single EventFd is enough for any number of queues as there is a single underlying interrupt
     // to guest anyway.
     call: EventFd,
-    handle: Mutex<Option<JoinHandle<()>>>,
 }
 
 impl XenInterrupt {
     pub fn new(dev: Arc<XenDevice>) -> Arc<Self> {
-        Arc::new(XenInterrupt {
+        let call = EventFd::new(0).unwrap();
+
+        let xen_int = Arc::new(XenInterrupt {
             dev,
-            call: EventFd::new(0).unwrap(),
-            handle: Mutex::new(None),
-        })
-    }
+            call: call.try_clone().unwrap(),
+        });
 
-    fn as_raw_fd(&self) -> i32 {
-        self.call.as_raw_fd()
-    }
+        xen_int
+            .dev
+            .guest
+            .xdm
+            .lock()
+            .unwrap()
+            .set_irqfd(call, xen_int.dev.irq as u32, true)
+            .unwrap();
 
-    fn clear_event(&self) {
-        self.call.read().unwrap();
-    }
-
-    pub fn setup(self: Arc<Self>) -> Result<()> {
-        let xfd = self.dev.xsh.fileno()?;
-        let ifd = self.as_raw_fd();
-        let epoll = XenEpoll::new(vec![xfd, ifd])?;
-        let dev = self.dev.clone();
-        let interrupt = self.clone();
-
-        *self.handle.lock().unwrap() = Some(
-            Builder::new()
-                .name(format!("interrupt {}", dev.dev_id))
-                .spawn(move || {
-                    while let Ok(fd) = epoll.wait() {
-                        if fd == ifd {
-                            interrupt.trigger(VirtioInterruptType::Queue(0)).unwrap();
-                        } else if dev.xs_event().is_err() {
-                            dev.gdev.lock().unwrap().reset();
-                            dev.gdev.lock().unwrap().shutdown();
-                            break;
-                        }
-                    }
-                })
-                .unwrap(),
-        );
-
-        Ok(())
+        xen_int
     }
 
     pub fn exit(&self) {
-        if let Some(handle) = self.handle.lock().unwrap().take() {
-            handle.join().unwrap();
-        }
-    }
-}
-
-impl VirtioInterrupt for XenInterrupt {
-    fn trigger(&self, _int_type: VirtioInterruptType) -> IoResult<()> {
-        // Clear the eventfd from backend
-        self.clear_event();
-
-        // Update interrupt state
-        self.dev
-            .mmio
-            .lock()
-            .unwrap()
-            .update_interrupt_state(VIRTIO_MMIO_INT_VRING);
-
-        // Raise interrupt to the guest
         self.dev
             .guest
             .xdm
             .lock()
             .unwrap()
-            .set_irq(self.dev.irq as u32)
+            .set_irqfd(self.call.try_clone().unwrap(), self.dev.irq as u32, false)
             .unwrap();
+    }
+}
+
+impl VirtioInterrupt for XenInterrupt {
+    fn trigger(&self, _int_type: VirtioInterruptType) -> IoResult<()> {
         Ok(())
     }
 

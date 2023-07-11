@@ -98,11 +98,11 @@ impl XenGuest {
         Ok(dev)
     }
 
-    pub fn remove_device(&self, dev_id: u32) -> Arc<XenDevice> {
+    pub fn remove_device(&self, dev_id: u32) {
         let dev = self.devices.lock().unwrap().remove(dev_id);
 
         println!("Removed device {} / {}", self.fe_domid, dev_id);
-        dev
+        dev.exit();
     }
 
     fn io_event(&self) -> Result<()> {

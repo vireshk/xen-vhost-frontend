@@ -95,7 +95,7 @@ impl XsHandle {
         self.read_watch(xs_watch_type_XS_WATCH_PATH)
     }
 
-    pub fn connect_dom(&mut self, dev_id: u32, fe_domid: u16) -> Result<(String, String)> {
+    pub fn connect_dom(&mut self, dev_id: u32, fe_domid: u16) -> Result<String> {
         let be = format!("{}/{}/{}", BACKEND_PATH, fe_domid, dev_id);
 
         let state = self.read_int(&be, "state")?;
@@ -111,14 +111,14 @@ impl XsHandle {
         }
 
         self.create_watch(be.clone(), be.clone())?;
-        self.create_watch(fe.clone(), fe.clone())?;
+        self.create_watch(fe.clone(), fe)?;
 
         let state = self.wait_state(&be, 1 << xenbus_state_XenbusStateInitWait)?;
         if state != xenbus_state_XenbusStateInitWait {
             return Err(Error::XBInvalidState);
         }
 
-        Ok((be, fe))
+        Ok(be)
     }
 
     pub fn wait_for_device(&mut self) -> Result<(u16, u32, bool)> {
