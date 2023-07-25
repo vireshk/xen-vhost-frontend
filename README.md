@@ -30,9 +30,6 @@ This is only tested for `AARCH64` currently.
 
   ```
 
-  There are few patches at the top of this tree which are required to make Xen
-  grant mappings works, which aren't merged in upstream Xen tree yet.
-
   xen-vhost-frontend accepts two arguments as of now, "socket-path" and
   "foreign-mapping".
 
