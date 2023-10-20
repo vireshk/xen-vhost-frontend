@@ -460,12 +460,12 @@ checksum = "ed94fce61571a4006852b7389a063ab983c02eb1bb37b47f8272ce92d06d9538"
 [[package]]
 name = "xen-bindings"
 version = "0.1.0"
-source = "git+https://github.com/vireshk/xen-sys#bd002d336c947926add8efe795f32b910e63a434"
+source = "git+https://github.com/mathieupoirier/xen-sys#8a234c94a5b595e672f9019b2524ee5a98a037a7"
 
 [[package]]
 name = "xen-ioctls"
 version = "0.1.0"
-source = "git+https://github.com/vireshk/xen-sys#bd002d336c947926add8efe795f32b910e63a434"
+source = "git+https://github.com/mathieupoirier/xen-sys#8a234c94a5b595e672f9019b2524ee5a98a037a7"
 dependencies = [
  "libc",
  "vmm-sys-util",
@@ -475,7 +475,7 @@ dependencies = [
 [[package]]
 name = "xen-store"
 version = "0.1.0"
-source = "git+https://github.com/vireshk/xen-sys#bd002d336c947926add8efe795f32b910e63a434"
+source = "git+https://github.com/mathieupoirier/xen-sys#8a234c94a5b595e672f9019b2524ee5a98a037a7"
 dependencies = [
  "libc",
  "nix",
