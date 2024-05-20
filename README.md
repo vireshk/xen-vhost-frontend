@@ -72,8 +72,8 @@ This is only tested for `AARCH64` currently.
 
   Though the setup works fine on vanilla kernel, this branch enables the
   necessary config options to make it all work. The same image can be used for
-  both host and guest kernels. User needs v6.3-rc1 or later, as it contains a
-  fix for xen grant mappings.
+  both host and guest kernels. User needs v6.7 or later, as it contains all
+  necessary changes.
 
   The following kernel config options must be enabled for Xen grant and foreign
   mappings: CONFIG_XEN_GNTDEV, CONFIG_XEN_GRANT_DEV_ALLOC, CONFIG_XEN_PRIVCMD,
