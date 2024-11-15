@@ -4,7 +4,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use std::{
-    fs::OpenOptions,
+    fs::{File, OpenOptions},
     io::{Read, Write},
     mem,
     sync::Arc,
@@ -104,7 +104,7 @@ const VIRTIO_MSG_SET_VQUEUE: u8 = 0x0c;
 const VIRTIO_MSG_RESET_VQUEUE: u8 = 0x0d;
 // const VIRTIO_MSG_EVENT_CONFIG: u8 = 0x10;
 const VIRTIO_MSG_EVENT_AVAIL: u8 = 0x11;
-// const VIRTIO_MSG_EVENT_USED: u8 = 0x12;
+const VIRTIO_MSG_EVENT_USED: u8 = 0x12;
 
 const VIRTIO_MSG_TYPE_RESPONSE: u8 = 0x1;
 const VIRTIO_MSG_TYPE_VIRTIO: u8 = 0x0;
@@ -429,7 +429,7 @@ impl XenMmio {
             .read(true)
             .write(true)
             .open("/dev/virtio-msg-0")
-            .unwrap();
+            .map_err(|_| Error::VirtioLegacyNotSupported)?;
 
         let request = unsafe {
             // Cast the struct to a mutable byte slice
@@ -461,6 +461,28 @@ impl XenMmio {
         );
 
         Ok(())
+    }
+
+    pub(crate) fn send_event_used(&self, file: &mut File) {
+        let mut request: VirtioMsg = VirtioMsg::default();
+
+        request._type = VIRTIO_MSG_TYPE_VIRTIO;
+        request.id = VIRTIO_MSG_EVENT_USED;
+
+        let buf = unsafe {
+            // Cast the struct to a mutable byte slice
+            std::slice::from_raw_parts_mut(
+                &mut request as *mut VirtioMsg as *mut u8,
+                mem::size_of::<VirtioMsg>(),
+            )
+        };
+
+        // With the rust-vmm setup, we don't get the virtqueue number here. Send the event for each
+        // virtqueue to make it work.
+        for i in 0..self.queues_count {
+            request.r.event_used.index = i as u32;
+            file.write_all(buf).unwrap();
+        }
     }
 
     fn config_read(&self, gdev: &Generic, offset: u64, size: u8) -> Result<u64> {

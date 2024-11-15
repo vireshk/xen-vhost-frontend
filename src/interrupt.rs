@@ -3,49 +3,84 @@
 //
 // SPDX-License-Identifier: Apache-2.0
 
-use std::{io::Result as IoResult, sync::Arc};
+use std::{
+    fs::OpenOptions,
+    io::Result as IoResult,
+    os::unix::io::AsRawFd,
+    sync::Arc,
+    sync::Mutex,
+    thread::{Builder, JoinHandle},
+};
 
 use vhost_user_frontend::{VirtioInterrupt, VirtioInterruptType};
 use vmm_sys_util::eventfd::EventFd;
 
-use super::device::XenDevice;
+use super::{device::XenDevice, epoll::XenEpoll};
 
 pub struct XenInterrupt {
     dev: Arc<XenDevice>,
     // Single EventFd is enough for any number of queues as there is a single underlying interrupt
     // to guest anyway.
-    call: EventFd,
+    call: Option<EventFd>,
+    handle: Mutex<Option<JoinHandle<()>>>,
+    is_irqfd: bool,
 }
 
 impl XenInterrupt {
-    pub fn new(dev: Arc<XenDevice>) -> Arc<Self> {
+    pub fn new(dev: Arc<XenDevice>, is_irqfd: bool) -> Arc<Self> {
         let call = EventFd::new(0).unwrap();
 
         let xen_int = Arc::new(XenInterrupt {
-            dev,
-            call: call.try_clone().unwrap(),
+            dev: dev.clone(),
+            call: Some(call.try_clone().unwrap()),
+            handle: Mutex::new(None),
+            is_irqfd,
         });
 
-        xen_int
-            .dev
-            .guest
-            .xdm
-            .lock()
-            .unwrap()
-            .set_irqfd(call, xen_int.dev.irq as u32, true)
-            .unwrap();
+        if is_irqfd {
+            xen_int
+                .dev
+                .guest
+                .xdm
+                .lock()
+                .unwrap()
+                .set_irqfd(call, xen_int.dev.irq as u32, true)
+                .unwrap()
+        } else {
+            let mut file = OpenOptions::new()
+                .write(true)
+                .open("/dev/virtio-msg-0")
+                .unwrap();
+
+            let fd = call.as_raw_fd();
+            let epoll = XenEpoll::new(vec![fd]).unwrap();
+            let xen_int2 = xen_int.clone();
+
+            *xen_int.handle.lock().unwrap() = Some(
+                Builder::new()
+                .spawn(move || {
+                    while let Ok(_) = epoll.wait() {
+                        xen_int2.call.as_ref().unwrap().read().unwrap();
+                        dev.mmio.lock().unwrap().send_event_used(&mut file);
+                    }
+                })
+                .unwrap(),
+            )
+        }
 
         xen_int
     }
 
     pub fn exit(&self) {
-        self.dev
-            .guest
-            .xdm
-            .lock()
-            .unwrap()
-            .set_irqfd(self.call.try_clone().unwrap(), self.dev.irq as u32, false)
-            .unwrap();
+        if self.is_irqfd {
+            self.dev
+                .guest
+                .xdm
+                .lock()
+                .unwrap()
+                .set_irqfd(self.call.as_ref().unwrap().try_clone().unwrap(), self.dev.irq as u32, false)
+                .unwrap();
+        }
     }
 }
 
@@ -55,6 +90,6 @@ impl VirtioInterrupt for XenInterrupt {
     }
 
     fn notifier(&self, _int_type: VirtioInterruptType) -> Option<EventFd> {
-        Some(self.call.try_clone().unwrap())
+        Some(self.call.as_ref().unwrap().try_clone().unwrap())
     }
 }
