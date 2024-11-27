@@ -128,8 +128,9 @@ impl XenDevice {
             interrupt: Mutex::new(None),
         });
 
-        let is_irqfd = dev.mmio.lock().unwrap().setup_vmsg_events(dev.clone()).is_err();
-        *dev.interrupt.lock().unwrap() = Some(XenInterrupt::new(dev.clone(), is_irqfd));
+        // Wait for the host to create the misc device.
+        while dev.mmio.lock().unwrap().setup_vmsg_events(dev.clone()).is_err() {}
+        *dev.interrupt.lock().unwrap() = Some(XenInterrupt::new(dev.clone(), false));
 
         Ok(dev)
     }
