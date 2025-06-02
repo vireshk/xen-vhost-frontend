@@ -31,155 +31,155 @@ use xen_bindings::bindings::{ioreq, IOREQ_READ, IOREQ_WRITE, XC_PAGE_SHIFT, XC_P
 use xen_ioctls::xc_domain_info;
 
 // Bus messages
-//const VIRTIO_MSG_FFA_ERROR: u8 = 0x00;
-const VIRTIO_MSG_FFA_ACTIVATE: u8 = 0x01;
-const VIRTIO_MSG_FFA_DEACTIVATE: u8 = 0x02;
-const VIRTIO_MSG_FFA_CONFIGURE: u8 = 0x03;
-//const VIRTIO_MSG_FFA_AREA_SHARE: u8 = 0x04;
-//const VIRTIO_MSG_FFA_AREA_UNSHARE: u8 = 0x05;
+const VIRTIO_MSG_BUS_GET_DEVICES: u8 = 0x02;
+const VIRTIO_MSG_FFA_BUS_VERSION: u8 = 0x80;
+//const VIRTIO_MSG_FFA_BUS_EVENT_POLL: u8 = 0x84;
+const VIRTIO_MSG_FFA_BUS_EVENT_CONFIGURE: u8 = 0x85;
 
-const VIRTIO_MSG_FFA_VERSION_1_0: u32 = 0x1;
-const VIRTIO_MSG_FFA_FEATURE_INDIRECT_MSG_SUPP: u64 = 0x1;
-const VIRTIO_MSG_FFA_FEATURE_DIRECT_MSG_SUPP: u64 = 0x2;
+const VIRTIO_MSG_FFA_BUS_VERSION_1_0: u32 = 0x0001_0000;
+
+const VIRTIO_MSG_FFA_FEATURE_INDIRECT_MSG_SUPP: u32 = 0xC;
+// const VIRTIO_MSG_FFA_FEATURE_DIRECT_MSG_SUPP: u32 = 0x2;
 
 #[derive(Copy, Clone, Default)]
 #[repr(C, packed)]
-struct BusActivate {
-	driver_version: u32,
+struct BusGetDevices {
+	offset: u16,
+	num: u16,
 }
 
 #[derive(Copy, Clone, Default)]
 #[repr(C, packed)]
-struct BusActivateResp {
-	device_version: u32,
-	features: u64,
-	num: u64,
+struct BusGetDevicesResp {
+	offset: u16,
+	num: u16,
+        next_offset: u16,
+        devices: u16,
 }
 
 #[derive(Copy, Clone, Default)]
 #[repr(C, packed)]
-struct BusConfigure {
-	features: u64,
+struct FfaBusVersion {
+	bus_version: u32,
+	transport_revision: u32,
 }
 
 #[derive(Copy, Clone, Default)]
 #[repr(C, packed)]
-struct BusConfigureResp {
-	features: u64,
+struct FfaBusVersionResp {
+	bus_version: u32,
+	transport_revision: u32,
+	transport_features: u32,
+	bus_features: u32,
+	area_num: u16,
 }
 
 #[derive(Copy, Clone, Default)]
 #[repr(C, packed)]
-struct BusAreaShare {
-	area_id: u32,
-	mem_handle: u64,
+struct BusEventConfigure {
+	_type: u8,
+	reserved: u8,
+	notify_id: u16,
 }
 
 #[derive(Copy, Clone, Default)]
 #[repr(C, packed)]
-struct BusAreaShareResp {
-	area_id: u32,
-}
-
-#[derive(Copy, Clone, Default)]
-#[repr(C, packed)]
-struct BusAreaUnshare {
-	area_id: u32,
-	mem_handle: u64,
+struct BusEventConfigureResp {
+	result: u16,
 }
 
 // Virtio messages
-// const VIRTIO_MSG_CONNECT: u8 = 0x01;
-// const VIRTIO_MSG_DISCONNECT: u8 = 0x02;
-const VIRTIO_MSG_DEVICE_INFO: u8 = 0x03;
-const VIRTIO_MSG_GET_FEATURES: u8 = 0x04;
-const VIRTIO_MSG_SET_FEATURES: u8 = 0x05;
-const VIRTIO_MSG_GET_CONFIG: u8 = 0x06;
-const VIRTIO_MSG_SET_CONFIG: u8 = 0x07;
-const VIRTIO_MSG_GET_CONFIG_GEN: u8 = 0x08;
-const VIRTIO_MSG_GET_DEVICE_STATUS: u8 = 0x09;
-const VIRTIO_MSG_SET_DEVICE_STATUS: u8 = 0x0a;
-const VIRTIO_MSG_GET_VQUEUE: u8 = 0x0b;
-const VIRTIO_MSG_SET_VQUEUE: u8 = 0x0c;
-const VIRTIO_MSG_RESET_VQUEUE: u8 = 0x0d;
-// const VIRTIO_MSG_EVENT_CONFIG: u8 = 0x10;
-const VIRTIO_MSG_EVENT_AVAIL: u8 = 0x11;
-const VIRTIO_MSG_EVENT_USED: u8 = 0x12;
+const VIRTIO_MSG_DEVICE_INFO: u8 = 0x02;
+const VIRTIO_MSG_GET_DEV_FEATURES: u8 = 0x03;
+const VIRTIO_MSG_SET_DRV_FEATURES: u8 = 0x04;
+const VIRTIO_MSG_GET_CONFIG: u8 = 0x05;
+const VIRTIO_MSG_SET_CONFIG: u8 = 0x06;
+const VIRTIO_MSG_GET_DEVICE_STATUS: u8 = 0x07;
+const VIRTIO_MSG_SET_DEVICE_STATUS: u8 = 0x08;
+const VIRTIO_MSG_GET_VQUEUE: u8 = 0x09;
+const VIRTIO_MSG_SET_VQUEUE: u8 = 0x0a;
+const VIRTIO_MSG_RESET_VQUEUE: u8 = 0x0b;
+//const VIRTIO_MSG_GET_SHM: u8 = 0x0c;
+//const VIRTIO_MSG_EVENT_CONFIG: u8 = 0x40;
+const VIRTIO_MSG_EVENT_AVAIL: u8 = 0x41;
+const VIRTIO_MSG_EVENT_USED: u8 = 0x42;
 
 const VIRTIO_MSG_TYPE_RESPONSE: u8 = 0x1;
-const VIRTIO_MSG_TYPE_VIRTIO: u8 = 0x0;
+const VIRTIO_MSG_TYPE_TRANSPORT: u8 = 0x0;
 const VIRTIO_MSG_TYPE_BUS: u8 = 0x2;
+
+const VIRTIO_MSG_MIN_SIZE: usize = 50;
+//const VIRTIO_MSG_MAX_SIZE: u8 = 65536;
+//const VIRTIO_MSG_REVISION_1: u8 = 0x1;
+// const VIRTIO_MSG_EVENT_AVAIL_WRAP_SHIFT: u8 = 31;
 
 #[derive(Copy, Clone, Default)]
 #[repr(C, packed)]
 struct GetDeviceInfoResp {
-    device_version: u32,
     device_id: u32,
     vendor_id: u32,
+    num_feature_bits: u32,
+    config_size: u32,
+    max_vq_count: u32,
+    admin_vq_start_idx: u16,
+    admin_vq_count: u16,
 }
 
 #[derive(Copy, Clone, Default)]
 #[repr(C, packed)]
 struct GetFeatures {
     index: u32,
+    num: u32,
 }
 
 #[derive(Copy, Clone, Default)]
 #[repr(C, packed)]
 struct GetFeaturesResp {
     index: u32,
-    features: [u64; 4],
+    num: u32,
+    features: u64,
 }
 
 #[derive(Copy, Clone, Default)]
 #[repr(C, packed)]
 struct SetFeatures {
     index: u32,
-    features: [u64; 4],
-}
-
-#[derive(Copy, Clone, Default)]
-#[repr(C, packed)]
-struct SetFeaturesResp {
-    index: u32,
-    features: [u64; 4],
+    num: u32,
+    features: u64,
 }
 
 #[derive(Copy, Clone, Default)]
 #[repr(C, packed)]
 struct GetConfig {
-    offset: [u8; 3],
-    size: u8,
+    offset: u32,
+    size: u32,
 }
 
 #[derive(Copy, Clone, Default)]
 #[repr(C, packed)]
 struct GetConfigResp {
-    offset: [u8; 3],
-    size: u8,
-    data: [u64; 4],
+    generation: u32,
+    offset: u32,
+    size: u32,
+    config: u64,
 }
 
 #[derive(Copy, Clone, Default)]
 #[repr(C, packed)]
 struct SetConfig {
-    offset: [u8; 3],
-    size: u8,
-    data: [u64; 4],
+    generation: u32,
+    offset: u32,
+    size: u32,
+    config: u64,
 }
 
 #[derive(Copy, Clone, Default)]
 #[repr(C, packed)]
 struct SetConfigResp {
-    offset: [u8; 3],
-    size: u8,
-    data: [u64; 4],
-}
-
-#[derive(Copy, Clone, Default)]
-#[repr(C, packed)]
-struct GetConfigGenResp {
     generation: u32,
+    offset: u32,
+    size: u32,
+    config: u64,
 }
 
 #[derive(Copy, Clone, Default)]
@@ -196,6 +196,12 @@ struct SetDeviceStatus {
 
 #[derive(Copy, Clone, Default)]
 #[repr(C, packed)]
+struct SetDeviceStatusResp {
+    status: u32,
+}
+
+#[derive(Copy, Clone, Default)]
+#[repr(C, packed)]
 struct GetVqueue {
     index: u32,
 }
@@ -206,6 +212,7 @@ struct GetVqueueResp {
     index: u32,
     max_size: u32,
     size: u32,
+    reserved: u32,
     descriptor_addr: u64,
     driver_addr: u64,
     device_addr: u64,
@@ -215,19 +222,9 @@ struct GetVqueueResp {
 #[repr(C, packed)]
 struct SetVqueue {
     index: u32,
-    unused: u32,
+    reserved0: u32,
     size: u32,
-    descriptor_addr: u64,
-    driver_addr: u64,
-    device_addr: u64,
-}
-
-#[derive(Copy, Clone, Default)]
-#[repr(C, packed)]
-struct SetVqueueResp {
-    index: u32,
-    unused: u32,
-    size: u32,
+    reserved1: u32,
     descriptor_addr: u64,
     driver_addr: u64,
     device_addr: u64,
@@ -243,17 +240,17 @@ struct ResetVqueue {
 #[repr(C, packed)]
 struct EventConfig {
     status: u32,
-    offset: [u8; 3],
-    size: u8,
-    value: [u32; 4],
+    generation: u32,
+    offset: u32,
+    size: u32,
+    config: u64,
 }
 
 #[derive(Copy, Clone, Default)]
 #[repr(C, packed)]
 struct EventAvail {
     index: u32,
-    next_offset: u32,
-    next_wrap: u32,
+    next_offset_wrap: u32,
 }
 
 #[derive(Copy, Clone, Default)]
@@ -265,30 +262,28 @@ struct EventUsed {
 #[derive(Copy, Clone)]
 #[repr(C, packed)]
 union ReqRespTypes {
-    payload: [u8; 36],
+    payload: [u8; VIRTIO_MSG_MIN_SIZE],
 
     // Bus messages
-    bus_activate: BusActivate,
-    bus_activate_resp: BusActivateResp,
-    bus_configure: BusConfigure,
-    bus_configure_resp: BusConfigureResp,
-    bus_area_share: BusAreaShare,
-    bus_area_share_resp: BusAreaShareResp,
-    bus_area_unshare: BusAreaUnshare,
+    bus_get_devices: BusGetDevices,
+    bus_get_devices_resp: BusGetDevicesResp,
+    ffa_bus_version: FfaBusVersion,
+    ffa_bus_version_resp: FfaBusVersionResp,
+    bus_event_config: BusEventConfigure,
+    bus_event_config_resp: BusEventConfigureResp,
 
     // virtio messages
     get_device_info_resp: GetDeviceInfoResp,
     get_features: GetFeatures,
     get_features_resp: GetFeaturesResp,
     set_features: SetFeatures,
-    set_features_resp: SetFeaturesResp,
     get_config: GetConfig,
     get_config_resp: GetConfigResp,
     set_config: SetConfig,
     set_config_resp: SetConfigResp,
-    get_config_gen_resp: GetConfigGenResp,
     get_device_status_resp: GetDeviceStatusResp,
     set_device_status: SetDeviceStatus,
+    set_device_status_resp: SetDeviceStatusResp,
     get_vqueue: GetVqueue,
     get_vqueue_resp: GetVqueueResp,
     set_vqueue: SetVqueue,
@@ -300,7 +295,7 @@ union ReqRespTypes {
 
 impl Default for ReqRespTypes {
     fn default() -> Self {
-        Self { payload: [0; 36] }
+        Self { payload: [0; VIRTIO_MSG_MIN_SIZE] }
     }
 }
 
@@ -309,7 +304,9 @@ impl Default for ReqRespTypes {
 struct VirtioMsg {
     _type: u8,
     id: u8,
-    dev_id: [u8; 2],
+    dev_id: u16,
+    token: u16,
+    msg_size: u16,
     r: ReqRespTypes,
 }
 
@@ -346,7 +343,6 @@ struct VirtQueue {
 
 pub struct XenMmio {
     addr: u64,
-    version: u8,
     vendor_id: u32,
     status: u32,
     queues_count: usize,
@@ -374,7 +370,6 @@ impl XenMmio {
 
         let mut mmio = Self {
             addr,
-            version: 2,
             vendor_id: 0x4d564b4c,
             status: 0,
             queues_count: sizes.len(),
@@ -450,7 +445,7 @@ impl XenMmio {
         *self.handle.lock().unwrap() = Some(
             Builder::new()
                 .spawn(move || {
-                    while file.read_exact(request).is_ok() {
+                    while file.read(request).is_ok() {
                         let mut mmio = dev.mmio.lock().unwrap();
 
                         mmio.handle_virtio_messages(&dev).unwrap();
@@ -466,8 +461,10 @@ impl XenMmio {
     pub(crate) fn send_event_used(&self, file: &mut File) {
         let mut request: VirtioMsg = VirtioMsg::default();
 
-        request._type = VIRTIO_MSG_TYPE_VIRTIO;
+        request._type = VIRTIO_MSG_TYPE_TRANSPORT;
         request.id = VIRTIO_MSG_EVENT_USED;
+        request.msg_size = VIRTIO_MSG_MIN_SIZE as u16;
+        request.token = 0;
 
         let buf = unsafe {
             // Cast the struct to a mutable byte slice
@@ -485,15 +482,15 @@ impl XenMmio {
         }
     }
 
-    fn config_read(&self, gdev: &Generic, offset: u64, size: u8) -> Result<u64> {
+    fn config_read(&self, gdev: &Generic, offset: u32, size: u32) -> Result<u64> {
         let mut data: u64 = 0;
-        gdev.read_config(offset, &mut data.as_mut_slice()[0..size as usize]);
+        gdev.read_config(offset as u64, &mut data.as_mut_slice()[0..size as usize]);
 
         Ok(data)
     }
 
-    fn config_write(&self, gdev: &mut Generic, data: u64, offset: u64, size: u8) -> Result<()> {
-        gdev.write_config(offset, &data.to_ne_bytes()[0..size as usize]);
+    fn config_write(&self, gdev: &mut Generic, data: u64, offset: u32, size: u32) -> Result<()> {
+        gdev.write_config(offset as u64, &data.to_ne_bytes()[0..size as usize]);
         Ok(())
     }
 
@@ -510,22 +507,29 @@ impl XenMmio {
 
     fn handle_virtio_bus_msg(&mut self) -> Result<()> {
         match self.request.id {
-            VIRTIO_MSG_FFA_ACTIVATE => {
-                self.response.r.bus_activate_resp.device_version = VIRTIO_MSG_FFA_VERSION_1_0;
-                self.response.r.bus_activate_resp.features =
-                    VIRTIO_MSG_FFA_FEATURE_INDIRECT_MSG_SUPP |
-                    VIRTIO_MSG_FFA_FEATURE_DIRECT_MSG_SUPP;
-                self.response.r.bus_activate_resp.num = 1;
+            VIRTIO_MSG_BUS_GET_DEVICES => {
+                self.response.r.bus_get_devices_resp.offset = 0;
+                self.response.r.bus_get_devices_resp.num = 1;
+                self.response.r.bus_get_devices_resp.next_offset = 0;
+                self.response.r.bus_get_devices_resp.devices = 0x1;
 
                 self.respond = true;
             }
 
-            VIRTIO_MSG_FFA_DEACTIVATE => {
-                self.respond = false;
+            VIRTIO_MSG_FFA_BUS_VERSION => {
+                self.response.r.ffa_bus_version_resp.bus_version = VIRTIO_MSG_FFA_BUS_VERSION_1_0;
+                self.response.r.ffa_bus_version_resp.transport_revision = 1;
+                self.response.r.ffa_bus_version_resp.transport_features = 0;
+                self.response.r.ffa_bus_version_resp.bus_features =
+                    VIRTIO_MSG_FFA_FEATURE_INDIRECT_MSG_SUPP;
+                self.response.r.ffa_bus_version_resp.area_num = 0;
+
+                self.respond = true;
             }
 
-            VIRTIO_MSG_FFA_CONFIGURE => {
-                unsafe { self.response.r.bus_configure_resp.features = self.request.r.bus_configure.features };
+            VIRTIO_MSG_FFA_BUS_EVENT_CONFIGURE => {
+                self.response.r.bus_event_config_resp.result = 0;
+
                 self.respond = true;
             }
 
@@ -542,13 +546,17 @@ impl XenMmio {
             VIRTIO_MSG_DEVICE_INFO => {
                 let gdev = &mut dev.gdev.lock().unwrap();
 
-                self.response.r.get_device_info_resp.device_version = self.version as u32;
                 self.response.r.get_device_info_resp.device_id = gdev.device_type();
                 self.response.r.get_device_info_resp.vendor_id = self.vendor_id;
+                self.response.r.get_device_info_resp.num_feature_bits = 64;
+                self.response.r.get_device_info_resp.config_size = 0;
+                self.response.r.get_device_info_resp.max_vq_count = 0;
+                self.response.r.get_device_info_resp.admin_vq_start_idx = 0;
+                self.response.r.get_device_info_resp.admin_vq_count = 0;
                 self.respond = true;
             }
 
-            VIRTIO_MSG_GET_FEATURES => {
+            VIRTIO_MSG_GET_DEV_FEATURES => {
                 let gdev = &mut dev.gdev.lock().unwrap();
 
                 let mut features = gdev.device_features();
@@ -557,15 +565,16 @@ impl XenMmio {
 
                 unsafe {
                     self.response.r.get_features_resp.index = self.request.r.get_features.index;
-                    self.response.r.get_features_resp.features[0] = features;
+                    self.response.r.get_features_resp.features = features;
+                    self.response.r.get_features_resp.num = 1;
                 }
                 self.respond = true;
             }
 
-            VIRTIO_MSG_SET_FEATURES => {
+            VIRTIO_MSG_SET_DRV_FEATURES => {
                 let gdev = &mut dev.gdev.lock().unwrap();
 
-                let driver_features = unsafe { self.request.r.set_features.features[0] };
+                let driver_features = unsafe { self.request.r.set_features.features };
 
                 if (driver_features & (1 << VIRTIO_F_VERSION_1)) == 0 {
                     return Err(Error::VirtioLegacyNotSupported);
@@ -593,19 +602,18 @@ impl XenMmio {
                 let size = unsafe { self.request.r.get_config.size };
 
                 if size == 0 || size > 8 {
-                    return Err(Error::InvalidSize(size));
+                    return Err(Error::InvalidSize(size as u8));
                 }
 
-                let data = unsafe { self.request.r.get_config.offset };
-                let mut offset = data[2] as u64;
-                offset = (offset << 8) | data[1] as u64;
-                offset = (offset << 8) | data[0] as u64;
+                let offset = unsafe { self.request.r.get_config.offset};
 
-                let data = self.config_read(gdev, offset, size)?;
+                let config = self.config_read(gdev, offset, size)?;
+
                 unsafe {
-                    self.response.r.get_config_resp.data[0] = data;
+                    self.response.r.get_config_resp.config = config;
                     self.response.r.get_config_resp.offset = self.request.r.get_config.offset;
                     self.response.r.get_config_resp.size = self.request.r.get_config.size;
+                    self.response.r.get_config_resp.generation = 1;
                 }
                 self.respond = true;
             }
@@ -616,32 +624,26 @@ impl XenMmio {
                 let size = unsafe { self.request.r.set_config.size };
 
                 if size == 0 || size > 8 {
-                    return Err(Error::InvalidSize(size));
+                    return Err(Error::InvalidSize(size as u8));
                 }
 
-                let data = unsafe { self.request.r.set_config.offset };
-                let mut offset = data[2] as u64;
-                offset = (offset << 8) | data[1] as u64;
-                offset = (offset << 8) | data[0] as u64;
+                let offset = unsafe { self.request.r.set_config.offset };
+                let config = unsafe { self.request.r.set_config.config };
 
                 self.config_write(
                     gdev,
-                    unsafe { self.request.r.set_config.data[0] },
+                    config,
                     offset,
                     size,
                 )?;
 
                 // Linux doesn't use below, still send it.
                 unsafe {
+                    self.response.r.set_config_resp.config = self.request.r.set_config.config;
                     self.response.r.set_config_resp.offset = self.request.r.set_config.offset;
-                    self.response.r.set_config_resp.data = self.request.r.set_config.data;
                     self.response.r.set_config_resp.size = self.request.r.set_config.size;
+                    self.response.r.set_config_resp.generation = self.request.r.set_config.generation;
                 }
-                self.respond = true;
-            }
-
-            VIRTIO_MSG_GET_CONFIG_GEN => {
-                self.response.r.get_config_gen_resp.generation = 0;
                 self.respond = true;
             }
 
@@ -649,9 +651,11 @@ impl XenMmio {
                 self.response.r.get_device_status_resp.status = self.status;
                 self.respond = true;
             }
+
             VIRTIO_MSG_SET_DEVICE_STATUS => {
                 unsafe { self.status = self.request.r.set_device_status.status };
-                self.respond = false;
+                self.response.r.set_device_status_resp.status = self.status;
+                self.respond = true;
             }
 
             VIRTIO_MSG_GET_VQUEUE => {
@@ -709,9 +713,11 @@ impl XenMmio {
         self.response = VirtioMsg::default();
         self.response._type = self.request._type | VIRTIO_MSG_TYPE_RESPONSE;
         self.response.id = self.request.id;
+        self.response.msg_size = VIRTIO_MSG_MIN_SIZE as u16;
+        self.response.token = self.request.token;
 
         match self.request._type {
-            VIRTIO_MSG_TYPE_VIRTIO => self.handle_virtio_msg(dev),
+            VIRTIO_MSG_TYPE_TRANSPORT => self.handle_virtio_msg(dev),
             VIRTIO_MSG_TYPE_BUS => self.handle_virtio_bus_msg(),
             _ => Err(Error::InvalidReqType(self.request._type)),
         }
