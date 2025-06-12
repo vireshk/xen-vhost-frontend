@@ -18,12 +18,10 @@ use vmm_sys_util::eventfd::EventFd;
 use super::{device::XenDevice, epoll::XenEpoll};
 
 pub struct XenInterrupt {
-    dev: Arc<XenDevice>,
     // Single EventFd is enough for any number of queues as there is a single underlying interrupt
     // to guest anyway.
     call: Option<EventFd>,
     handle: Mutex<Option<JoinHandle<()>>>,
-    is_irqfd: bool,
 }
 
 impl XenInterrupt {
@@ -31,22 +29,11 @@ impl XenInterrupt {
         let call = EventFd::new(0).unwrap();
 
         let xen_int = Arc::new(XenInterrupt {
-            dev: dev.clone(),
             call: Some(call.try_clone().unwrap()),
             handle: Mutex::new(None),
-            is_irqfd,
         });
 
-        if is_irqfd {
-            xen_int
-                .dev
-                .guest
-                .xdm
-                .lock()
-                .unwrap()
-                .set_irqfd(call, xen_int.dev.irq as u32, true)
-                .unwrap()
-        } else {
+        if !is_irqfd {
             let mut file = OpenOptions::new()
                 .write(true)
                 .open("/dev/virtio-msg-0")
@@ -69,18 +56,6 @@ impl XenInterrupt {
         }
 
         xen_int
-    }
-
-    pub fn exit(&self) {
-        if self.is_irqfd {
-            self.dev
-                .guest
-                .xdm
-                .lock()
-                .unwrap()
-                .set_irqfd(self.call.as_ref().unwrap().try_clone().unwrap(), self.dev.irq as u32, false)
-                .unwrap();
-        }
     }
 }
 

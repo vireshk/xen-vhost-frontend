@@ -11,28 +11,26 @@ use std::{
 };
 
 use lazy_static::lazy_static;
-use vhost_user_frontend::{Generic, VhostUserConfig, VirtioDevice, VirtioDeviceType};
+use vhost_user_frontend::{Generic, VhostUserConfig, VirtioDeviceType};
 use vmm_sys_util::eventfd::{EventFd, EFD_NONBLOCK};
-use xen_bindings::bindings::ioreq;
 
 use super::{
-    guest::XenGuest, interrupt::XenInterrupt, mmio::XenMmio, supported_devices::SUPPORTED_DEVICES,
-    Error, Result, XsHandle, BACKEND_PATH,
+    interrupt::XenInterrupt, mmio::XenMmio, supported_devices::SUPPORTED_DEVICES,
+    Error, Result,
 };
-
-pub const VIRTIO_MMIO_IO_SIZE: u64 = 0x200;
 
 #[derive(Parser, Debug)]
 #[clap(author, version, about, long_about = None)]
 struct DeviceArgs {
     /// Location of vhost-user Unix domain socket.
-    #[clap(short, long)]
+    #[clap(short = 's', long)]
     socket_path: String,
-    /// Memory mapping, foreign or grant.
-    #[clap(short, long)]
-    foreign_mapping: bool,
+    /// Device name for loopback test.
+    #[clap(short = 'd', long, default_value = "i2c")]
+    device: String,
 }
 
+#[derive(Debug)]
 struct DeviceInfo {
     name: &'static str,
     compatible: String,
@@ -70,28 +68,20 @@ lazy_static! {
 pub struct XenDevice {
     pub gdev: Mutex<Generic>,
     pub mmio: Mutex<XenMmio>,
-    pub xsh: XsHandle,
-    pub dev_id: u32,
-    pub addr: u64,
-    pub irq: u8,
-    pub guest: Arc<XenGuest>,
     interrupt: Mutex<Option<Arc<XenInterrupt>>>,
 }
 
 impl XenDevice {
-    pub fn new(dev_id: u32, guest: Arc<XenGuest>) -> Result<Arc<Self>> {
-        let mut xsh = XsHandle::new()?;
-        let be = xsh.connect_dom(dev_id, guest.fe_domid)?;
-
-        let dev_dir = format!("{}/{}/{}", BACKEND_PATH, guest.fe_domid, dev_id);
-        let compatible = xsh.read_str(&dev_dir, "type")?;
-        let addr = xsh.read_int(&be, "base")? as u64;
-        let irq = xsh.read_int(&be, "irq")? as u8;
+    pub fn new() -> Result<Arc<Self>> {
+        let val = SUPPORTED_DEVICES
+        .iter()
+        .find(|(name, _)| *name == DEVICE_ARGS.device).unwrap().1;
+        let compat = format!("virtio,device{}", val);
 
         let mut devices = DEVICES.lock().unwrap();
         let dev = devices
-            .get_mut(&compatible)
-            .ok_or(Error::XenDevNotSupported(compatible))?;
+            .get_mut(&compat)
+            .ok_or(Error::XenDevNotSupported(compat.to_string()))?;
 
         let device_type = VirtioDeviceType::from(dev.name);
         let (num, size) = device_type.queue_num_and_size();
@@ -115,16 +105,11 @@ impl XenDevice {
         )
         .map_err(Error::VhostFrontendError)?;
 
-        let mmio = XenMmio::new(&gdev, guest.clone(), addr, DEVICE_ARGS.foreign_mapping)?;
+        let mmio = XenMmio::new(&gdev)?;
 
         let dev = Arc::new(Self {
             gdev: Mutex::new(gdev),
             mmio: Mutex::new(mmio),
-            xsh,
-            dev_id,
-            addr,
-            irq,
-            guest,
             interrupt: Mutex::new(None),
         });
 
@@ -139,36 +124,5 @@ impl XenDevice {
         // We use interrupt.take() here to drop the reference to Arc<XenInterrupt>, as the same
         // isn't required anymore.
         self.interrupt.lock().unwrap().as_ref().unwrap().clone()
-    }
-
-    pub fn setup_ioreq(&self) -> Result<()> {
-        self.guest
-            .xdm
-            .lock()
-            .unwrap()
-            .map_io_range_to_ioreq_server(self.addr, VIRTIO_MMIO_IO_SIZE)
-    }
-
-    pub fn destroy_ioreq(&self) -> Result<()> {
-        self.guest
-            .xdm
-            .lock()
-            .unwrap()
-            .ummap_io_range_from_ioreq_server(self.addr, VIRTIO_MMIO_IO_SIZE)
-    }
-
-    pub fn io_event(&self, ioreq: &mut ioreq) -> Result<()> {
-        self.mmio.lock().unwrap().io_event(ioreq, self)
-    }
-
-    pub fn exit(&self) {
-        if let Some(interrupt) = self.interrupt.lock().unwrap().take() {
-            interrupt.exit();
-        }
-
-        self.gdev.lock().unwrap().reset();
-        self.gdev.lock().unwrap().shutdown();
-
-        self.destroy_ioreq().ok();
     }
 }

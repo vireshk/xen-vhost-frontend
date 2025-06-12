@@ -5,7 +5,7 @@
 
 use std::{
     sync::{Arc, Mutex},
-    thread::{self, JoinHandle},
+    thread::JoinHandle,
 };
 
 use super::{device::XenDevice, guest::XenGuest, Result};
@@ -28,12 +28,6 @@ impl FrontendGuests {
         Ok(guest)
     }
 
-    fn remove_guest(&mut self, fe_domid: u16) {
-        self.0
-            .remove(self.0.iter().position(|g| g.fe_domid == fe_domid).unwrap())
-            .exit()
-    }
-
     fn add_device(&mut self, fe_domid: u16, dev_id: u32) -> Result<Arc<XenDevice>> {
         let guest = match self.find_guest(fe_domid) {
             Some(guest) => guest,
@@ -41,15 +35,6 @@ impl FrontendGuests {
         };
 
         guest.add_device(dev_id)
-    }
-
-    fn remove_device(&mut self, fe_domid: u16, dev_id: u32) {
-        let guest = self.find_guest(fe_domid).unwrap();
-        guest.remove_device(dev_id);
-
-        if guest.is_empty() {
-            self.remove_guest(fe_domid);
-        }
     }
 }
 
@@ -67,20 +52,8 @@ impl XenFrontend {
     }
 
     pub fn add_device(&self, fe_domid: u16, dev_id: u32) -> Result<()> {
-        // TODO: We need some sign that all devid subdirs are already written to
-        // Xenstore, so it's time to parse them. This delay although works, doesn't
-        // guarantee that.
-        thread::sleep(std::time::Duration::from_millis(400));
-
-        let dev = self.guests.lock().unwrap().add_device(fe_domid, dev_id)?;
-
-        // Device is ready to accept ioreq() updates now, lets enable that.
-        dev.setup_ioreq()?;
+        self.guests.lock().unwrap().add_device(fe_domid, dev_id)?;
         Ok(())
-    }
-
-    pub fn remove_device(&self, fe_domid: u16, dev_id: u32) {
-        self.guests.lock().unwrap().remove_device(fe_domid, dev_id);
     }
 
     pub fn push(&self, handle: JoinHandle<()>) {

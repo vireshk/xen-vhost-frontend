@@ -10,15 +10,10 @@ mod guest;
 mod interrupt;
 mod mmio;
 mod supported_devices;
-mod xdm;
-mod xec;
-mod xfm;
-mod xs;
 
 use std::{io, num::ParseIntError, str, thread::Builder};
 
 use frontend::XenFrontend;
-use xs::XsHandle;
 
 pub const BACKEND_PATH: &str = "backend/virtio";
 
@@ -72,26 +67,16 @@ pub enum Error {
 
 fn main() -> Result<()> {
     let frontend = XenFrontend::new()?;
-    let mut xsh = XsHandle::new_with_epoll()?;
-    xsh.create_watch(BACKEND_PATH.to_string(), BACKEND_PATH.to_string())?;
 
-    loop {
-        let (fe_domid, dev_id, new) = xsh.wait_for_device()?;
+    let f = frontend.clone();
+    frontend.push(
+        Builder::new()
+        .name(format!("frontend {} - {}", 0, 0))
+        .spawn(move || {
+            f.add_device(0, 0).unwrap();
+        })
+        .unwrap(),
+    );
 
-        // Handle events in individual threads, in order to support multiple
-        // devices / guests.
-        let f = frontend.clone();
-        frontend.push(
-            Builder::new()
-                .name(format!("frontend {} - {}", fe_domid, dev_id))
-                .spawn(move || {
-                    if new {
-                        f.add_device(fe_domid, dev_id).unwrap();
-                    } else {
-                        f.remove_device(fe_domid, dev_id);
-                    }
-                })
-                .unwrap(),
-        );
-    }
+    loop {}
 }

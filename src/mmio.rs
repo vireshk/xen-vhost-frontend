@@ -7,6 +7,7 @@ use std::{
     fs::{File, OpenOptions},
     io::{Read, Write},
     mem,
+    os::unix::io::AsRawFd,
     sync::Arc,
     sync::Mutex,
     thread::{Builder, JoinHandle},
@@ -16,77 +17,13 @@ use vhost::vhost_user::message::VhostUserProtocolFeatures;
 use vhost_user_frontend::{Generic, VirtioDevice};
 use vhost_user_frontend::{GuestMemoryMmap, GuestRegionMmap};
 use virtio_bindings::virtio_config::{VIRTIO_F_IOMMU_PLATFORM, VIRTIO_F_VERSION_1};
-use virtio_bindings::virtio_ring::{__virtio16, vring_avail, vring_used, vring_used_elem};
-use virtio_queue::{Descriptor, Queue, QueueT};
+use virtio_queue::{Queue, QueueT};
 use vm_memory::ByteValued;
-use vm_memory::{
-    guest_memory::FileOffset, GuestAddress, GuestMemoryAtomic, GuestMemoryRegion, MmapRange,
-    MmapRegion, MmapXenFlags,
-};
+use vm_memory::{guest_memory::FileOffset, GuestAddress, GuestMemoryAtomic};
 
 use vmm_sys_util::eventfd::{EventFd, EFD_NONBLOCK};
 
-use super::{device::XenDevice, guest::XenGuest, Error, Result};
-use xen_bindings::bindings::{ioreq, IOREQ_READ, IOREQ_WRITE, XC_PAGE_SHIFT, XC_PAGE_SIZE};
-use xen_ioctls::xc_domain_info;
-
-// Bus messages
-const VIRTIO_MSG_BUS_GET_DEVICES: u8 = 0x02;
-const VIRTIO_MSG_FFA_BUS_VERSION: u8 = 0x80;
-//const VIRTIO_MSG_FFA_BUS_EVENT_POLL: u8 = 0x84;
-const VIRTIO_MSG_FFA_BUS_EVENT_CONFIGURE: u8 = 0x85;
-
-const VIRTIO_MSG_FFA_BUS_VERSION_1_0: u32 = 0x0001_0000;
-
-const VIRTIO_MSG_FFA_FEATURE_INDIRECT_MSG_SUPP: u32 = 0xC;
-// const VIRTIO_MSG_FFA_FEATURE_DIRECT_MSG_SUPP: u32 = 0x2;
-
-#[derive(Copy, Clone, Default)]
-#[repr(C, packed)]
-struct BusGetDevices {
-	offset: u16,
-	num: u16,
-}
-
-#[derive(Copy, Clone, Default)]
-#[repr(C, packed)]
-struct BusGetDevicesResp {
-	offset: u16,
-	num: u16,
-        next_offset: u16,
-        devices: u16,
-}
-
-#[derive(Copy, Clone, Default)]
-#[repr(C, packed)]
-struct FfaBusVersion {
-	bus_version: u32,
-	transport_revision: u32,
-}
-
-#[derive(Copy, Clone, Default)]
-#[repr(C, packed)]
-struct FfaBusVersionResp {
-	bus_version: u32,
-	transport_revision: u32,
-	transport_features: u32,
-	bus_features: u32,
-	area_num: u16,
-}
-
-#[derive(Copy, Clone, Default)]
-#[repr(C, packed)]
-struct BusEventConfigure {
-	_type: u8,
-	reserved: u8,
-	notify_id: u16,
-}
-
-#[derive(Copy, Clone, Default)]
-#[repr(C, packed)]
-struct BusEventConfigureResp {
-	result: u16,
-}
+use super::{device::XenDevice, epoll::XenEpoll, Error, Result};
 
 // Virtio messages
 const VIRTIO_MSG_DEVICE_INFO: u8 = 0x02;
@@ -106,7 +43,7 @@ const VIRTIO_MSG_EVENT_USED: u8 = 0x42;
 
 const VIRTIO_MSG_TYPE_RESPONSE: u8 = 0x1;
 const VIRTIO_MSG_TYPE_TRANSPORT: u8 = 0x0;
-const VIRTIO_MSG_TYPE_BUS: u8 = 0x2;
+//const VIRTIO_MSG_TYPE_BUS: u8 = 0x2;
 
 const VIRTIO_MSG_MIN_SIZE: usize = 50;
 //const VIRTIO_MSG_MAX_SIZE: u8 = 65536;
@@ -264,14 +201,6 @@ struct EventUsed {
 union ReqRespTypes {
     payload: [u8; VIRTIO_MSG_MIN_SIZE],
 
-    // Bus messages
-    bus_get_devices: BusGetDevices,
-    bus_get_devices_resp: BusGetDevicesResp,
-    ffa_bus_version: FfaBusVersion,
-    ffa_bus_version_resp: FfaBusVersionResp,
-    bus_event_config: BusEventConfigure,
-    bus_event_config_resp: BusEventConfigureResp,
-
     // virtio messages
     get_device_info_resp: GetDeviceInfoResp,
     get_features: GetFeatures,
@@ -310,25 +239,6 @@ struct VirtioMsg {
     r: ReqRespTypes,
 }
 
-const GUEST_RAM0_BASE: u64 = 0x40000000; // 3GB of low RAM @ 1GB
-const XEN_GRANT_ADDR_OFF: u64 = 1 << 63;
-
-fn get_dom_size(domid: u16) -> Result<usize> {
-    let info = xc_domain_info(domid, 1);
-
-    if info.len() != 1 {
-        Err(Error::InvalidDomainInfo(info.len(), domid, 0))
-    } else if info[0].domid != domid {
-        Err(Error::InvalidDomainInfo(
-            info.len(),
-            domid,
-            info[0].domid as usize,
-        ))
-    } else {
-        Ok((info[0].nr_pages as usize - 4) << XC_PAGE_SHIFT)
-    }
-}
-
 struct VirtQueue {
     ready: u32,
     size: u32,
@@ -342,16 +252,12 @@ struct VirtQueue {
 }
 
 pub struct XenMmio {
-    addr: u64,
     vendor_id: u32,
     status: u32,
     queues_count: usize,
     queues: Vec<(usize, Queue, EventFd)>,
     vq: Vec<VirtQueue>,
     regions: Vec<GuestRegionMmap>,
-    foreign_mapping: bool,
-    guest_size: usize,
-    guest: Arc<XenGuest>,
     request: VirtioMsg,
     response: VirtioMsg,
     respond: bool,
@@ -359,45 +265,24 @@ pub struct XenMmio {
 }
 
 impl XenMmio {
-    pub fn new(
-        gdev: &Generic,
-        guest: Arc<XenGuest>,
-        addr: u64,
-        foreign_mapping: bool,
-    ) -> Result<Self> {
+    pub fn new(gdev: &Generic) -> Result<Self> {
         let sizes = gdev.queue_max_sizes();
-        let guest_size = get_dom_size(guest.fe_domid)?;
 
         let mut mmio = Self {
-            addr,
             vendor_id: 0x4d564b4c,
             status: 0,
             queues_count: sizes.len(),
             queues: Vec::with_capacity(sizes.len()),
             vq: Vec::new(),
             regions: Vec::new(),
-            foreign_mapping,
-            guest_size,
-            guest: guest.clone(),
             request: VirtioMsg::default(),
             response: VirtioMsg::default(),
             respond: false,
             handle: Mutex::new(None),
         };
 
-        let xfm = guest.xfm.lock().unwrap();
-        let ioreq = xfm.ioreq(0).unwrap();
-        let xec = guest.xec.lock().unwrap();
-
-        for (index, size) in sizes.iter().enumerate() {
+        for (_, size) in sizes.iter().enumerate() {
             let kick = EventFd::new(EFD_NONBLOCK).unwrap();
-
-            guest
-                .xdm
-                .lock()
-                .unwrap()
-                .set_ioeventfd(&kick, ioreq, xec.ports(), addr, index as u32, true)
-                .unwrap();
 
             mmio.vq.push(VirtQueue {
                 ready: 0,
@@ -408,12 +293,6 @@ impl XenMmio {
                 used: 0,
                 kick,
             });
-        }
-
-        // Foreign memory must be mapped in advance as it takes considerable amount of time to do
-        // it, and doing it later times out the guest kernel.
-        if foreign_mapping {
-            mmio.map_foreign_region(guest.fe_domid)?;
         }
 
         Ok(mmio)
@@ -445,12 +324,16 @@ impl XenMmio {
         *self.handle.lock().unwrap() = Some(
             Builder::new()
                 .spawn(move || {
-                    while file.read(request).is_ok() {
-                        let mut mmio = dev.mmio.lock().unwrap();
+                    let epoll = XenEpoll::new(vec![file.as_raw_fd()]).unwrap();
 
+                    while let Ok(_) = epoll.wait() {
+                        file.read(request).unwrap();
+
+                        let mut mmio = dev.mmio.lock().unwrap();
                         mmio.handle_virtio_messages(&dev).unwrap();
                         file.write_all(response).unwrap();
                     }
+
                 })
                 .unwrap(),
         );
@@ -494,51 +377,6 @@ impl XenMmio {
         Ok(())
     }
 
-    fn io_read(&mut self, ioreq: &mut ioreq, offset: u64) -> Result<()> {
-        let index = (offset / 8) as usize;
-
-        unsafe {
-            let ptr = &mut self.response as *mut VirtioMsg as *mut u64;
-            ioreq.data = *ptr.add(index);
-        }
-
-        Ok(())
-    }
-
-    fn handle_virtio_bus_msg(&mut self) -> Result<()> {
-        match self.request.id {
-            VIRTIO_MSG_BUS_GET_DEVICES => {
-                self.response.r.bus_get_devices_resp.offset = 0;
-                self.response.r.bus_get_devices_resp.num = 1;
-                self.response.r.bus_get_devices_resp.next_offset = 0;
-                self.response.r.bus_get_devices_resp.devices = 0x1;
-
-                self.respond = true;
-            }
-
-            VIRTIO_MSG_FFA_BUS_VERSION => {
-                self.response.r.ffa_bus_version_resp.bus_version = VIRTIO_MSG_FFA_BUS_VERSION_1_0;
-                self.response.r.ffa_bus_version_resp.transport_revision = 1;
-                self.response.r.ffa_bus_version_resp.transport_features = 0;
-                self.response.r.ffa_bus_version_resp.bus_features =
-                    VIRTIO_MSG_FFA_FEATURE_INDIRECT_MSG_SUPP;
-                self.response.r.ffa_bus_version_resp.area_num = 0;
-
-                self.respond = true;
-            }
-
-            VIRTIO_MSG_FFA_BUS_EVENT_CONFIGURE => {
-                self.response.r.bus_event_config_resp.result = 0;
-
-                self.respond = true;
-            }
-
-            x => println!("handle_virtio_bus_msg() failed, unknown msg id {}", x),
-        }
-
-        Ok(())
-    }
-
     fn handle_virtio_msg(&mut self, dev: &XenDevice) -> Result<()> {
         self.response.dev_id = self.request.dev_id;
 
@@ -549,7 +387,7 @@ impl XenMmio {
                 self.response.r.get_device_info_resp.device_id = gdev.device_type();
                 self.response.r.get_device_info_resp.vendor_id = self.vendor_id;
                 self.response.r.get_device_info_resp.num_feature_bits = 64;
-                self.response.r.get_device_info_resp.config_size = 0;
+                self.response.r.get_device_info_resp.config_size = 0x200;
                 self.response.r.get_device_info_resp.max_vq_count = 0;
                 self.response.r.get_device_info_resp.admin_vq_start_idx = 0;
                 self.response.r.get_device_info_resp.admin_vq_count = 0;
@@ -677,11 +515,13 @@ impl XenMmio {
                 vq.used = unsafe { self.request.r.set_vqueue.device_addr };
 
                 // Initialize the virtqueue
-                self.init_vq(dev.guest.fe_domid, index as usize)?;
+                self.init_vq(index as usize)?;
 
                 // Wait for all virtqueues to get initialized.
                 if self.queues.len() == self.queues_count {
-                    self.activate_device(dev, dev.guest.fe_domid)?;
+                    self.map_mem(self.vq[0].desc)?;
+
+                    self.activate_device(dev)?;
                 }
                 self.respond = true;
             }
@@ -718,137 +558,31 @@ impl XenMmio {
 
         match self.request._type {
             VIRTIO_MSG_TYPE_TRANSPORT => self.handle_virtio_msg(dev),
-            VIRTIO_MSG_TYPE_BUS => self.handle_virtio_bus_msg(),
             _ => Err(Error::InvalidReqType(self.request._type)),
         }
     }
 
-    fn io_write(&mut self, ioreq: &mut ioreq, dev: &XenDevice, offset: u64) -> Result<()> {
-        let index = (offset / 8) as usize;
-
-        unsafe {
-            let ptr = &mut self.request as *mut VirtioMsg as *mut u64;
-            *ptr.add(index) = ioreq.data;
-        }
-
-        // Ignore the first four writes, act only after the whole request is written.
-        if index != 4 {
-            return Ok(());
-        }
-
-        self.handle_virtio_messages(dev)
-    }
-
-    fn sort_regions(&mut self) {
-        self.regions
-            .sort_by(|a, b| a.start_addr().partial_cmp(&b.start_addr()).unwrap());
-    }
-
-    fn map_region(
-        &mut self,
-        addr: GuestAddress,
-        size: usize,
-        path: &str,
-        flags: u32,
-        data: u32,
-    ) -> Result<()> {
+    fn map_mem(&mut self, addr: u64) -> Result<()> {
         let file = OpenOptions::new()
             .read(true)
             .write(true)
-            .open(path)
+            .open("/dev/virtio-msg-lb")
             .unwrap();
 
-        let range = MmapRange::new(size, Some(FileOffset::new(file, 0)), addr, flags, data);
-        let region = GuestRegionMmap::new(MmapRegion::from_range(range).unwrap(), addr).unwrap();
+        let size = 0x800000; // Fix the size to 8 MB for now
+
+        let region = GuestRegionMmap::from_range(
+            GuestAddress(addr),
+            size,
+            Some(FileOffset::new(file, 0)),
+        ).unwrap();
 
         self.regions.push(region);
 
         Ok(())
     }
 
-    fn map_foreign_region(&mut self, domid: u16) -> Result<()> {
-        self.map_region(
-            GuestAddress(GUEST_RAM0_BASE),
-            self.guest_size,
-            "/dev/xen/privcmd",
-            MmapXenFlags::FOREIGN.bits(),
-            domid as u32,
-        )
-    }
-
-    // Maps entire guest address space in one region.
-    //
-    // The address received here is special as the kernel ORs the address with 0x8000000000000000
-    // to mark it for grant mapping. If the memory mapping fails for a device here and address
-    // doesn't have the top bit set, then either the guest kernel's DT doesn't have the required
-    // iommu nodes or it is missing some Kconfig options.
-    //
-    // Hint: XEN_GRANT_DMA_ADDR_OFF in drivers/xen/grant-dma-ops.c.
-    fn map_grant_region(&mut self, addr: u64, size: usize, domid: u16, flags: u32) -> Result<()> {
-        if size == 0 {
-            return Ok(());
-        }
-
-        self.map_region(
-            GuestAddress(addr),
-            size,
-            "/dev/xen/gntdev",
-            flags | MmapXenFlags::GRANT.bits(),
-            domid as u32,
-        )
-    }
-
-    // Maps virtqueues in advance.
-    fn map_grant_queue_regions(&mut self, queue: &Queue, vq_size: usize, domid: u16) -> Result<()> {
-        let mut size = vq_size * std::mem::size_of::<Descriptor>();
-        self.map_grant_region(queue.desc_table(), size, domid, 0)?;
-
-        size = vq_size * std::mem::size_of::<__virtio16>();
-        size += std::mem::size_of::<vring_avail>();
-        // Extra 2 bytes for vring_used_elem at the end of avail ring
-        size += std::mem::size_of::<__virtio16>();
-        self.map_grant_region(queue.avail_ring(), size, domid, 0)?;
-
-        size = vq_size * std::mem::size_of::<vring_used_elem>();
-        size += std::mem::size_of::<vring_used>();
-        // Extra 2 bytes for vring_used_elem at the end of used ring
-        size += std::mem::size_of::<__virtio16>();
-        self.map_grant_region(queue.used_ring(), size, domid, 0)?;
-
-        Ok(())
-    }
-
-    // Maps non-virtqueues memory with no advance map flag.
-    fn map_grant_remaining_regions(&mut self, domid: u16) -> Result<()> {
-        // Sort the already added regions by start address.
-        self.sort_regions();
-
-        let mut regions: Vec<GuestRegionMmap> = self.regions.drain(..).collect();
-        let mut offset = XEN_GRANT_ADDR_OFF;
-
-        for region in &regions {
-            let size = (region.start_addr().0 - offset) as usize;
-            self.map_grant_region(offset, size, domid, MmapXenFlags::NO_ADVANCE_MAP.bits())?;
-            offset = region.start_addr().0 + region.len() + XC_PAGE_SIZE as u64 - 1;
-            offset = (offset >> XC_PAGE_SHIFT) << XC_PAGE_SHIFT;
-        }
-
-        // Regions are mapped from address 0 until end of all virtqueues, lets map the rest now.
-        self.map_grant_region(
-            offset,
-            self.guest_size - (offset - XEN_GRANT_ADDR_OFF) as usize,
-            domid,
-            MmapXenFlags::NO_ADVANCE_MAP.bits(),
-        )?;
-        self.regions.append(&mut regions);
-
-        // Sort the already added regions by start address.
-        self.sort_regions();
-
-        Ok(())
-    }
-
-    fn init_vq(&mut self, domid: u16, index: usize) -> Result<()> {
+    fn init_vq(&mut self, index: usize) -> Result<()> {
         let vq = &mut self.vq[index];
         let kick = vq.kick.try_clone().unwrap();
         let vq_size = vq.size;
@@ -874,10 +608,6 @@ impl XenMmio {
 
         vq.ready = 1;
 
-        if !self.foreign_mapping {
-            self.map_grant_queue_regions(&queue, vq_size as usize, domid)?;
-        }
-
         self.queues.push((index, queue, kick));
 
         Ok(())
@@ -893,49 +623,20 @@ impl XenMmio {
         )
     }
 
-    fn activate_device(&mut self, dev: &XenDevice, domid: u16) -> Result<()> {
-        // Map rest of the memory, now that all the queues are mapped.
-        if !self.foreign_mapping {
-            self.map_grant_remaining_regions(domid)?;
-        }
-
+    fn activate_device(&mut self, dev: &XenDevice) -> Result<()> {
+        let mem = self.mem();
         dev.gdev
             .lock()
             .unwrap()
-            .activate(self.mem(), dev.interrupt(), self.queues.drain(..).collect())
+            .activate(mem, dev.interrupt(), self.queues.drain(..).collect())
             .map_err(Error::VhostFrontendActivateError)
-    }
-
-    pub fn io_event(&mut self, ioreq: &mut ioreq, dev: &XenDevice) -> Result<()> {
-        let offset = ioreq.addr - self.addr;
-
-        match ioreq.dir() as u32 {
-            IOREQ_READ => self.io_read(ioreq, offset),
-            IOREQ_WRITE => self.io_write(ioreq, dev, offset),
-            _ => Err(Error::InvalidMmioDir(ioreq.dir())),
-        }
     }
 }
 
 impl Drop for XenMmio {
     fn drop(&mut self) {
-        let xfm = self.guest.xfm.lock().unwrap();
-        let ioreq = xfm.ioreq(0).unwrap();
-        let xec = self.guest.xec.lock().unwrap();
-
         if let Some(handle) = self.handle.lock().unwrap().take() {
             handle.join().unwrap();
-        }
-
-        for (index, vq) in self.vq.iter().enumerate() {
-            let kick = vq.kick.try_clone().unwrap();
-
-            self.guest
-                .xdm
-                .lock()
-                .unwrap()
-                .set_ioeventfd(&kick, ioreq, xec.ports(), self.addr, index as u32, false)
-                .unwrap();
         }
     }
 }
