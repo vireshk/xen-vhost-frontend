@@ -9,7 +9,7 @@ use std::sync::Arc;
 use vhost::vhost_user::message::{VhostUserProtocolFeatures, VHOST_USER_CONFIG_OFFSET};
 use vhost_user_frontend::{Generic, VirtioDevice};
 use vhost_user_frontend::{GuestMemoryMmap, GuestRegionMmap};
-use virtio_bindings::virtio_config::{VIRTIO_F_IOMMU_PLATFORM, VIRTIO_F_VERSION_1};
+use virtio_bindings::virtio_config::{VIRTIO_F_ACCESS_PLATFORM, VIRTIO_F_VERSION_1};
 use virtio_bindings::virtio_mmio::{
     VIRTIO_MMIO_CONFIG_GENERATION, VIRTIO_MMIO_DEVICE_FEATURES, VIRTIO_MMIO_DEVICE_FEATURES_SEL,
     VIRTIO_MMIO_DEVICE_ID, VIRTIO_MMIO_DRIVER_FEATURES, VIRTIO_MMIO_DRIVER_FEATURES_SEL,
@@ -187,7 +187,12 @@ impl XenMmio {
 
                 let mut features = gdev.device_features();
                 features |= 1 << VIRTIO_F_VERSION_1;
-                features |= 1 << VIRTIO_F_IOMMU_PLATFORM;
+                if self.foreign_mapping {
+                    features &= !(1 << VIRTIO_F_ACCESS_PLATFORM);
+                } else {
+                    features |= 1 << VIRTIO_F_ACCESS_PLATFORM;
+                }
+
                 (features >> (32 * self.device_features_sel)) as u32
             }
             VIRTIO_MMIO_QUEUE_READY => vq.ready,
