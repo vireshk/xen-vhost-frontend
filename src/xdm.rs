@@ -118,7 +118,9 @@ impl XenDeviceModel {
 
 impl Drop for XenDeviceModel {
     fn drop(&mut self) {
-        self.set_ioreq_server_state(0).ok();
-        self.destroy_ioreq_server().ok();
+        if self.id.is_some() {
+            let _ = self.set_ioreq_server_state(0);
+            let _ = self.destroy_ioreq_server();
+        }
     }
 }
