@@ -265,7 +265,15 @@ impl XenMmio {
                 }
             }
             VIRTIO_MMIO_QUEUE_NOTIFY => {
-                // This is handled in the Linux kernel now. Nothing to do here.
+                // Normally the kernel's privcmd ioeventfd answers this write and kicks the
+                // backend. But this thread waits on the same event channel, and whichever
+                // side sees the ioreq READY first takes it. When this thread wins, the
+                // kernel sees INPROCESS and does nothing, so kick here too. A duplicate
+                // kick is harmless; a lost one leaves the guest's buffers unseen.
+                let q = (ioreq.data as u32 & 0xFFFF) as usize;
+                if q < self.vq.len() {
+                    let _ = self.vq[q].kick.write(1);
+                }
             }
 
             _ => return Err(Error::InvalidMmioAddr("write", offset)),
