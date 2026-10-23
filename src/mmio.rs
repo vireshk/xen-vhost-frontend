@@ -195,6 +195,12 @@ impl XenMmio {
 
                 (features >> (32 * self.device_features_sel)) as u32
             }
+            // DriverFeatures is write-only (VIRTIO 1.x 4.2.2), but some drivers read it back
+            // (Zephyr up to v4.4 does a read-modify-write). Answer with what was written
+            // instead of failing the ioreq, which leaves the guest vCPU waiting forever.
+            VIRTIO_MMIO_DRIVER_FEATURES => {
+                (self.driver_features >> (32 * self.driver_features_sel)) as u32
+            }
             VIRTIO_MMIO_QUEUE_READY => vq.ready,
             VIRTIO_MMIO_QUEUE_DESC_LOW => vq.desc_lo,
             VIRTIO_MMIO_QUEUE_DESC_HIGH => vq.desc_hi,
