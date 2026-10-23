@@ -9,7 +9,9 @@ use std::sync::Arc;
 use vhost::vhost_user::message::{VhostUserProtocolFeatures, VHOST_USER_CONFIG_OFFSET};
 use vhost_user_frontend::{Generic, VirtioDevice};
 use vhost_user_frontend::{GuestMemoryMmap, GuestRegionMmap};
-use virtio_bindings::virtio_config::{VIRTIO_F_ACCESS_PLATFORM, VIRTIO_F_VERSION_1};
+use virtio_bindings::virtio_config::{
+    VIRTIO_CONFIG_S_FEATURES_OK, VIRTIO_F_ACCESS_PLATFORM, VIRTIO_F_VERSION_1,
+};
 use virtio_bindings::virtio_mmio::{
     VIRTIO_MMIO_CONFIG_GENERATION, VIRTIO_MMIO_DEVICE_FEATURES, VIRTIO_MMIO_DEVICE_FEATURES_SEL,
     VIRTIO_MMIO_DEVICE_ID, VIRTIO_MMIO_DRIVER_FEATURES, VIRTIO_MMIO_DRIVER_FEATURES_SEL,
@@ -220,7 +222,28 @@ impl XenMmio {
             VIRTIO_MMIO_DEVICE_FEATURES_SEL => self.device_features_sel = ioreq.data as u32,
             VIRTIO_MMIO_DRIVER_FEATURES_SEL => self.driver_features_sel = ioreq.data as u32,
             VIRTIO_MMIO_QUEUE_SEL => self.queue_sel = ioreq.data as u32,
-            VIRTIO_MMIO_STATUS => self.status = ioreq.data as u32,
+            VIRTIO_MMIO_STATUS => {
+                let status = ioreq.data as u32;
+                // Negotiate when the driver sets FEATURES_OK (VIRTIO 1.x 3.1.1), not on a
+                // particular DriverFeatures write: a driver that writes no device feature
+                // bit (e.g. Zephyr's virtio-entropy) never writes selector 0.
+                if (status & VIRTIO_CONFIG_S_FEATURES_OK) != 0
+                    && (self.status & VIRTIO_CONFIG_S_FEATURES_OK) == 0
+                {
+                    if (self.driver_features & (1 << VIRTIO_F_VERSION_1)) == 0 {
+                        return Err(Error::MmioLegacyNotSupported);
+                    }
+                    dev.gdev
+                        .lock()
+                        .unwrap()
+                        .negotiate_features(
+                            self.driver_features,
+                            VhostUserProtocolFeatures::XEN_MMAP,
+                        )
+                        .map_err(Error::VhostFrontendError)?;
+                }
+                self.status = status;
+            }
             VIRTIO_MMIO_QUEUE_NUM => vq.size = ioreq.data as u32,
             VIRTIO_MMIO_QUEUE_DESC_LOW => vq.desc_lo = ioreq.data as u32,
             VIRTIO_MMIO_QUEUE_DESC_HIGH => vq.desc_hi = ioreq.data as u32,
@@ -235,22 +258,7 @@ impl XenMmio {
                 self.driver_features |=
                     ((ioreq.data as u32) as u64) << (32 * self.driver_features_sel);
 
-                if self.driver_features_sel == 1 {
-                    if (self.driver_features & (1 << VIRTIO_F_VERSION_1)) == 0 {
-                        return Err(Error::MmioLegacyNotSupported);
-                    }
-                } else {
-                    // Guest sends feature sel 1 first, followed by 0. Once that is done, lets
-                    // negotiate features.
-                    dev.gdev
-                        .lock()
-                        .unwrap()
-                        .negotiate_features(
-                            self.driver_features,
-                            VhostUserProtocolFeatures::XEN_MMAP,
-                        )
-                        .map_err(Error::VhostFrontendError)?;
-                }
+                // Negotiated on FEATURES_OK, see VIRTIO_MMIO_STATUS.
             }
             VIRTIO_MMIO_QUEUE_READY => {
                 if ioreq.data == 1 {
