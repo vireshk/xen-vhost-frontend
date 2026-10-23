@@ -160,7 +160,9 @@ impl XenGuest {
                             break;
                         }
 
-                        guest.io_event().ok();
+                        if let Err(e) = guest.io_event() {
+                            eprintln!("ioreq not completed: {:?}", e);
+                        }
                     }
                 })
                 .unwrap(),
